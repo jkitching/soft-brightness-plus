@@ -2,6 +2,7 @@
 # Copyright (C) 2019, 2020 THE soft-brightness-plus'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the soft-brightness-plus package.
 # Philippe Troin, 2019, 2020.
+# Wedone <wedoneofficiel@outlook.fr>, 2024.
 #
 msgid ""
 msgstr ""
@@ -9,7 +10,7 @@ msgstr ""
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2022-03-02 08:06-0800\n"
 "PO-Revision-Date: 2022-03-02 08:08-0800\n"
-"Last-Translator: Philippe Troin (F-i-f on Github)\n"
+"Last-Translator: Wedone <wedoneofficiel@outlook.fr>\n"
 "Language-Team: none\n"
 "Language: fr\n"
 "MIME-Version: 1.0\n"
@@ -67,7 +68,7 @@ msgstr "Réglage de luminosité actif en plein-écran, mode sans-déchirures"
 
 #: src/prefs.js:145
 msgid "Minimum brightness (0..1):"
-msgstr "Luminosité minimale (0..1) :"
+msgstr "Luminosité minimale (de 0 à 1) :"
 
 #: src/prefs.js:164
 msgid "Mouse cursor brightness control:"
@@ -119,10 +120,11 @@ msgid ""
 "to always, window unredirection will always be prevented when this extension "
 "is active, allowing tear-free display."
 msgstr ""
-"\"never\": la non-redirection n'est jamais évitée.  \"when-correcting\": la "
-"non-redirection est évitée quand la luminosité n'est pas maximale.  \"always"
-"\": la non-redirection est toujours évité, et l'affichage est toujours sans "
-"déchirure (synchronisation verticale)."
+"Si défini sur jamais, la non-redirection n'est jamais empêchée. Si défini sur quand "
+"correction, la non-redirection sera empêchée lorsque la luminosité n'est pas au "
+"réglage maximum (et une couche alpha diminue la luminosité). Si défini "
+"sur toujours, la non-redirection de fenêtre sera toujours empêchée lorsque cette extension "
+"est active, permettant un affichage sans déchirure."
 
 #: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:41
 msgid "Minimum brightness."
@@ -153,15 +155,12 @@ msgid ""
 "that if another Gnome Shell component clones the mouse (like the Zoom "
 "accessibility feature), the cursor will follow the screen brightness."
 msgstr ""
-"Activer le contrôle de la luminosité du curseur de la souris. S'il est "
-"actif, la luminosité du curseur de la souris suivra celle de l'écran. S'il "
-"est inactif, le curseur de la souris restera toujours à la luminosité "
-"maximale. Le contrôle de la luminosité du curseur montre parfois le mauvais "
-"curseur et peut entrainer un décalage entre le mouvement de la souris et "
-"celui du curseur à l'écran. En cas de problèmes avec le curseur de la "
-"souris, désactiver l'option.  Noter que si un autre composant de Gnome Shell "
-"(tel que le Zoom) clone le curseur de la souris, celui-ci suivra alors la "
-"luminosité de l'écran."
+"Lorsqu'il est activé, le curseur de la souris suit le paramètre de luminosité. Lorsque "
+"désactivé, le curseur de la souris reste toujours en pleine luminosité. Contrôle "
+"La luminosité du curseur de la souris peut parfois afficher le mauvais curseur et introduire "
+"décalage du curseur. Vous souhaiterez peut-être le désactiver si vous rencontrez des problèmes de curseur. Remarque »
+"que si un autre composant Gnome Shell clone la souris (comme le Zoom "
+"fonction d'accessibilité), le curseur suivra la luminosité de l'écran."
 
 #: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:65
 msgid "Debugging."
