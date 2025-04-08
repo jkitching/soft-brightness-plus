@@ -791,7 +791,10 @@ class OverlayManager {
     _preventUnredirect() {
         if (!this._unredirectPrevented) {
             this._logger.log_debug('_preventUnredirect(): disabling unredirects, prevent-unredirect=' + this._settings.get_string('prevent-unredirect'));
-            Meta.disable_unredirect_for_display(global.display);
+            // In GS 48, *_unredirect_for_display functions were moved to global compositor.
+            global.compositor.disable_unredirect !== undefined
+              ? global.compositor.disable_unredirect()
+              : Meta.disable_unredirect_for_display(global.display);
             this._unredirectPrevented = true;
         }
     }
@@ -799,7 +802,10 @@ class OverlayManager {
     _allowUnredirect() {
         if (this._unredirectPrevented) {
             this._logger.log_debug('_allowUnredirect(): enabling unredirects, prevent-unredirect=' + this._settings.get_string('prevent-unredirect'));
-            Meta.enable_unredirect_for_display(global.display);
+            // In GS 48, *_unredirect_for_display functions were moved to global compositor.
+            global.compositor.enable_unredirect !== undefined
+              ? global.compositor.enable_unredirect()
+              : Meta.enable_unredirect_for_display(global.display);
             this._unredirectPrevented = false;
         }
     }
