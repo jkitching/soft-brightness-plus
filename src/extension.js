@@ -621,7 +621,12 @@ class CursorManager {
             this._cursorTracker.disconnect(this._cursorVisibilityChangedId);
             delete this._cursorVisibilityChangedId;
 
-            this._cursorTracker.set_pointer_visible(true);
+            // In GS 45, set_pointer_visible was replaced by uninhibit_cursor_visibility.
+            if (this._cursorTracker.uninhibit_cursor_visibility !== undefined) {
+                this._cursorTracker.uninhibit_cursor_visibility();
+            } else {
+                this._cursorTracker.set_pointer_visible(true);
+            }
         }
     }
 
@@ -634,7 +639,12 @@ class CursorManager {
         }
 
         if (!this._cursorVisibilityChangedId) {
-            this._cursorTracker.set_pointer_visible(false);
+            // In GS 45, set_pointer_visible was replaced by inhibit_cursor_visibility.
+            if (this._cursorTracker.inhibit_cursor_visibility !== undefined) {
+                this._cursorTracker.inhibit_cursor_visibility();
+            } else {
+                this._cursorTracker.set_pointer_visible(false);
+            }
             this._cursorVisibilityChangedId = this._cursorTracker.connect('visibility-changed', () => {
                 if (this._cursorTracker.get_pointer_visible())
                     this._cursorTracker.set_pointer_visible(false);
