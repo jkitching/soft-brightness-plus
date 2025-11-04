@@ -470,11 +470,11 @@ class IndicatorManager {
         this._slider = this._indicator.slider;
 
         // Watch hardware brightness changes to sync overlay when in "control together" mode
-        if (this._indicator && this._indicator.slider) {
+        if (this._slider) {
             this._logger.log_debug('IndicatorManager: connecting to hardware brightness slider');
-            this._hardwareBrightnessChangedId = this._indicator.slider.connect('notify::value', () => {
+            this._hardwareBrightnessChangedId = this._slider.connect('notify::value', () => {
                 const useBacklight = this._settings.get_boolean('use-backlight');
-                const hardwareValue = this._indicator.slider.value;
+                const hardwareValue = this._slider.value;
                 this._logger.log_debug(`IndicatorManager: hardware brightness changed to ${hardwareValue}, use-backlight=${useBacklight}`);
 
                 // Only sync when use-backlight is ON (control together mode)
@@ -545,20 +545,10 @@ class IndicatorManager {
     }
 
     disable() {
-        // If _enableTimeoutId is non-null, _enable() has not run yet, and will
-        // not run.  Do not run _disable() in this case.
+        // If _enableTimeoutId is non-null, _enable() has not run yet,
+        // and will not run.
         GLib.source_remove(this._enableTimeoutId);
-        if (this._enableTimeoutId !== null) {
-            return;
-        }
         this._enableTimeoutId = null;
-
-        if (this._indicator === null) {
-            return;
-        }
-
-        this._indicator = null;
-        this._slider = null;
 
         // Cleanup custom slider
         if (this._overlayBrightnessItem) {
@@ -568,17 +558,14 @@ class IndicatorManager {
 
         // Cleanup hardware brightness watcher
         if (this._hardwareBrightnessChangedId) {
-            if (this._indicator && this._indicator.slider) {
-                this._indicator.slider.disconnect(this._hardwareBrightnessChangedId);
+            if (this._slider) {
+                this._slider.disconnect(this._hardwareBrightnessChangedId);
             }
             this._hardwareBrightnessChangedId = null;
         }
 
-        // If "use-backlight" is false and slider was being used for adjusting gamma,
-        // slider will now revert to its previous use of backlight adjustment. Run
-        // _sync() to update its value, and maybe also hide the slider if backlight
-        // adjustment is unavailable on this machine.
-        indicator._sync();
+        this._indicator = null;
+        this._slider = null;
     }
 }
 
