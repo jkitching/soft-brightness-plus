@@ -18,8 +18,11 @@
 import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PointerWatcher from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
+import {QuickSlider} from 'resource:///org/gnome/shell/ui/quickSettings.js';
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
@@ -56,7 +59,7 @@ export default class SoftBrightnessExtension extends Extension {
         this._monitorManager = new MonitorManager(this._logger, this._settings, this.path);
         this._overlayManager = new OverlayManager(this._logger, this._settings, this._monitorManager);
         this._cursorManager = new CursorManager(this._logger, this._settings, this._overlayManager);
-        this._indicatorManager = new IndicatorManager(this._logger);
+        this._indicatorManager = new IndicatorManager(this._logger, this._settings);
         this._screenshotManager = new ScreenshotManager(this._logger);
 
         this._monitorManager.setChangeHook(() => {
@@ -66,15 +69,6 @@ export default class SoftBrightnessExtension extends Extension {
 
         this._cursorManager.setChangeHook(() => {
             this._on_brightness_change(true);
-        });
-
-        this._indicatorManager.setBrightnessGetter(() => {
-            this._on_brightness_change(false);
-            return this._getBrightnessLevel();
-        });
-
-        this._indicatorManager.setBrightnessSetter((value) => {
-            this._storeBrightnessLevel(value);
         });
 
         this._screenshotManager.setPreCaptureHook(() => {
@@ -163,9 +157,6 @@ export default class SoftBrightnessExtension extends Extension {
         this._logger.log_debug('_on_brightness_change: current-brightness=' + curBrightness + ', min-brightness=' + minBrightness);
         if (curBrightness < minBrightness) {
             curBrightness = minBrightness;
-            if (!this._settings.get_boolean('use-backlight')) {
-                this._indicatorManager.setSliderValue(curBrightness);
-            }
             this._storeBrightnessLevel(minBrightness);
             return;
         }
@@ -183,11 +174,32 @@ export default class SoftBrightnessExtension extends Extension {
         }
     }
 
+    _getProxy() {
+        // Prefer Main.brightnessManager.globalScale if available (GNOME 49+)
+        const globalScale = Main.brightnessManager?.globalScale;
+        if (globalScale) {
+            // Return a proxy-compatible wrapper around globalScale
+            // Old proxy API: Brightness property with 0-100 scale
+            // New API: value property with 0.0-1.0 scale
+            return {
+                get Brightness() {
+                    return globalScale.value * 100;
+                },
+                set Brightness(percent) {
+                    globalScale.value = percent / 100.0;
+                }
+            };
+        }
+
+        // Fallback to legacy D-Bus proxy
+        return this._indicatorManager.getProxy();
+    }
+
     // Utility functions to manage the stored brightness value.
     // If using the backlight, then we use the indicator as the brightness value store, which is linked to gsd.
     // If not using the backlight, the brightness is stored in the extension setting.
     _storeBrightnessLevel(value) {
-        const proxy = this._indicatorManager.getProxy();
+        const proxy = this._getProxy();
         if (this._settings.get_boolean('use-backlight') && !proxy) {
             this._logger.log_debug('_storeBrightnessLevel still waiting for proxy...');
             return;
@@ -197,14 +209,16 @@ export default class SoftBrightnessExtension extends Extension {
             const convertedBrightness = Math.min(100, Math.round(value * 100.0));
             this._logger.log_debug('_storeBrightnessLevel(' + value + ') by proxy -> ' + convertedBrightness);
             proxy.Brightness = convertedBrightness;
-        } else {
-            this._logger.log_debug('_storeBrightnessLevel(' + value + ') by setting');
-            this._settings.set_double('current-brightness', value);
         }
+
+        // Always store current-brightness value so that when use-backlight is
+        // disabled, there is no jarring shift in the overlay brightness.
+        this._logger.log_debug('_storeBrightnessLevel(' + value + ') by setting');
+        this._settings.set_double('current-brightness', value);
     }
 
     _getBrightnessLevel() {
-        const proxy = this._indicatorManager.getProxy();
+        const proxy = this._getProxy();
         if (this._settings.get_boolean('use-backlight') && !proxy) {
             this._logger.log_debug('_getBrightnessLevel still waiting for proxy...');
             return 0;
@@ -282,6 +296,127 @@ class ScreenshotManager {
     }
 }
 
+// Custom QuickSlider to control overlay brightness independently from hardware brightness
+const OverlayBrightnessItem = GObject.registerClass(
+class OverlayBrightnessItem extends QuickSlider {
+    _init(logger, settings) {
+        super._init({
+            iconName: 'display-brightness-symbolic',
+        });
+
+        this._logger = logger;
+        this._settings = settings;
+
+        this.slider.accessible_name = _('Overlay Brightness');
+
+        // Disable the menu button since we don't need per-monitor controls
+        this.menuEnabled = false;
+
+        // Color icon to distinguish from hardware brightness slider
+        // Using accent color to make it visually distinct
+        this._icon.style = 'color: -st-accent-color;';
+
+        // Connect slider value changes to our brightness setter
+        this._sliderChangedId = this.slider.connect('notify::value',
+            () => this._onSliderChanged());
+
+        // Watch for min-brightness setting changes
+        this._minBrightnessChangedId = this._settings.connect('changed::min-brightness',
+            () => {
+                const minBrightness = this._settings.get_double('min-brightness');
+                this._logger.log_debug(`OverlayBrightnessItem: min-brightness changed to ${minBrightness}`);
+                // If current brightness is below new minimum, adjust it
+                if (this.slider.value < minBrightness) {
+                    this._onSliderChanged();
+                }
+            });
+
+        // Watch for current-brightness setting changes (e.g., from hardware brightness watcher)
+        this._brightnessChangedId = this._settings.connect('changed::current-brightness',
+            () => {
+                this._logger.log_debug('OverlayBrightnessItem: current-brightness changed externally, syncing');
+                this._sync();
+            });
+
+        // Watch for use-backlight setting changes to show/hide slider
+        this._useBacklightChangedId = this._settings.connect('changed::use-backlight',
+            () => {
+                this._updateVisibility();
+            });
+
+        // Set initial value from current brightness
+        this._sync();
+
+        // Set initial visibility based on use-backlight setting
+        this._updateVisibility();
+
+        // Check if current brightness is below minimum and fix it if needed
+        const minBrightness = this._settings.get_double('min-brightness');
+        if (this.slider.value < minBrightness) {
+            this._logger.log_debug(`OverlayBrightnessItem: initial brightness ${this.slider.value} below minimum ${minBrightness}, correcting`);
+            this._onSliderChanged();
+        }
+
+        this._logger.log_debug('OverlayBrightnessItem: initialized');
+    }
+
+    _onSliderChanged() {
+        let value = this.slider.value;
+        const minBrightness = this._settings.get_double('min-brightness');
+
+        // Enforce minimum brightness to prevent completely black screen
+        if (value < minBrightness) {
+            this._logger.log_debug(`OverlayBrightnessItem: slider value ${value} below minimum ${minBrightness}, clamping`);
+            value = minBrightness;
+            // Update slider to show the clamped value
+            this.slider.block_signal_handler(this._sliderChangedId);
+            this.slider.value = value;
+            this.slider.unblock_signal_handler(this._sliderChangedId);
+        }
+
+        this._logger.log_debug(`OverlayBrightnessItem: slider changed to ${value}`);
+        // Write directly to the setting - this will trigger overlay updates via changed::current-brightness
+        this._settings.set_double('current-brightness', value);
+    }
+
+    _sync() {
+        // Block signal to avoid feedback loop when updating slider
+        this.slider.block_signal_handler(this._sliderChangedId);
+        const brightness = this._settings.get_double('current-brightness');
+        this.slider.value = brightness;
+        this.slider.unblock_signal_handler(this._sliderChangedId);
+        this._logger.log_debug(`OverlayBrightnessItem: synced to brightness ${brightness}`);
+    }
+
+    _updateVisibility() {
+        const useBacklight = this._settings.get_boolean('use-backlight');
+        // Show overlay slider only when use-backlight is OFF (overlay-only mode)
+        this.visible = !useBacklight;
+        this._logger.log_debug(`OverlayBrightnessItem: visibility set to ${this.visible} (use-backlight=${useBacklight})`);
+    }
+
+    destroy() {
+        if (this._sliderChangedId) {
+            this.slider.disconnect(this._sliderChangedId);
+            this._sliderChangedId = null;
+        }
+        if (this._minBrightnessChangedId) {
+            this._settings.disconnect(this._minBrightnessChangedId);
+            this._minBrightnessChangedId = null;
+        }
+        if (this._brightnessChangedId) {
+            this._settings.disconnect(this._brightnessChangedId);
+            this._brightnessChangedId = null;
+        }
+        if (this._useBacklightChangedId) {
+            this._settings.disconnect(this._useBacklightChangedId);
+            this._useBacklightChangedId = null;
+        }
+        this._logger.log_debug('OverlayBrightnessItem: destroyed');
+        super.destroy();
+    }
+});
+
 // Monkey-patched brightness indicator methods
 class IndicatorManager {
     constructor(logger, settings) {
@@ -293,16 +428,14 @@ class IndicatorManager {
         // Set/destroyed by _enable/_disable
         this._indicator = null;
         this._slider = null;
+
+        // Custom slider approach
+        this._overlayBrightnessItem = null;
+        this._hardwareBrightnessChangedId = null;
     }
 
     getProxy() {
         return this._indicator?._proxy;
-    }
-
-    setSliderValue(value) {
-        if (this._slider !== null) {
-            this._slider.value = value;
-        }
     }
 
     enable() {
@@ -332,50 +465,83 @@ class IndicatorManager {
         });
     }
 
-    setBrightnessGetter(fn) {
-        this._getBrightnessFn = fn;
-    }
-
-    setBrightnessSetter(fn) {
-        this._setBrightnessFn = fn;
-    }
-
     _enable() {
         this._indicator = Main.panel.statusArea.quickSettings._brightness.quickSettingsItems[0];
         this._slider = this._indicator.slider;
 
-        const indicator = this._indicator;
-        const slider = this._slider;
+        // Watch hardware brightness changes to sync overlay when in "control together" mode
+        if (this._indicator && this._indicator.slider) {
+            this._logger.log_debug('IndicatorManager: connecting to hardware brightness slider');
+            this._hardwareBrightnessChangedId = this._indicator.slider.connect('notify::value', () => {
+                const useBacklight = this._settings.get_boolean('use-backlight');
+                const hardwareValue = this._indicator.slider.value;
+                this._logger.log_debug(`IndicatorManager: hardware brightness changed to ${hardwareValue}, use-backlight=${useBacklight}`);
 
-        indicator.__orig__sliderChanged = indicator._sliderChanged;
-        indicator._sliderChanged = () => {
-            const value = slider.value;
-            this._logger.log_debug('_sliderChanged(slide, ' + value + ')');
-            if (this._setBrightnessFn !== null) {
-                this._setBrightnessFn(value);
+                // Only sync when use-backlight is ON (control together mode)
+                if (useBacklight) {
+                    this._logger.log_debug(`IndicatorManager: syncing overlay to hardware brightness ${hardwareValue}`);
+                    this._settings.set_double('current-brightness', hardwareValue);
+                }
+            });
+            this._logger.log_debug(`IndicatorManager: hardware brightness watcher connected`);
+        } else {
+            this._logger.log_debug('IndicatorManager: WARNING - could not find hardware brightness slider to watch');
+        }
+
+        // Also add custom overlay brightness slider
+        this._addCustomSlider();
+    }
+
+    _addCustomSlider() {
+        this._logger.log_debug('IndicatorManager: adding custom overlay brightness slider');
+
+        // Create custom slider item
+        this._overlayBrightnessItem = new OverlayBrightnessItem(
+            this._logger,
+            this._settings
+        );
+
+        // Add to QuickSettings menu right after hardware brightness slider
+        const quickSettings = Main.panel.statusArea.quickSettings;
+        const brightnessItem = Main.panel.statusArea.quickSettings._brightness?.quickSettingsItems?.[0];
+
+        // The menu.box contains a grid container (St_Widget) which holds all the quick settings items
+        const gridContainer = quickSettings.menu.box.get_child_at_index(0);
+
+        if (gridContainer && brightnessItem) {
+            // Find the position of the hardware brightness item in the grid
+            let brightnessPosition = -1;
+            const nChildren = gridContainer.get_n_children();
+
+            for (let i = 0; i < nChildren; i++) {
+                const child = gridContainer.get_child_at_index(i);
+                if (child === brightnessItem) {
+                    brightnessPosition = i;
+                    break;
+                }
             }
-        };
-        slider.disconnect(indicator._sliderChangedId);
-        indicator._sliderChangedId = slider.connect(
-            'notify::value', indicator._sliderChanged.bind(indicator));
 
-        indicator.__orig__sync = indicator._sync;
-        indicator._sync = () => {
-            this._logger.log_debug('_sync()');
-            if (this._getBrightnessFn !== null) {
-                slider.value = this._getBrightnessFn();
+            if (brightnessPosition >= 0) {
+                // Insert right after the hardware brightness slider
+                gridContainer.insert_child_at_index(this._overlayBrightnessItem, brightnessPosition + 1);
+                // Set column-span to 2 so it takes full width like other sliders
+                gridContainer.layout_manager.child_set_property(
+                    gridContainer, this._overlayBrightnessItem, 'column-span', 2);
+                this._logger.log_debug(`IndicatorManager: custom slider inserted at position ${brightnessPosition + 1}`);
+            } else {
+                // Fallback: add at beginning
+                gridContainer.insert_child_at_index(this._overlayBrightnessItem, 0);
+                gridContainer.layout_manager.child_set_property(
+                    gridContainer, this._overlayBrightnessItem, 'column-span', 2);
+                this._logger.log_debug('IndicatorManager: custom slider added at position 0');
             }
-        };
+        } else {
+            // Last resort: use addItem
+            quickSettings.menu.addItem(this._overlayBrightnessItem);
+            this._logger.log_debug('IndicatorManager: custom slider added via addItem');
+        }
 
-        // If brightness indicator was previously hidden (i.e. backlight adjustment
-        // not available on this device), brightness indicator needs to be manually
-        // set to visible for our own use.
-        // (e.g. if backlight control not available).
-        indicator.visible = true;
-        // If "use-backlight" is false when enabling the extention, slider will
-        // now be used for adjusting gamma instead of backlight. Run _sync() to
-        // update slider to its new value.
-        indicator._sync();
+        this._logger.log_debug('IndicatorManager: custom overlay brightness slider added');
     }
 
     disable() {
@@ -391,20 +557,22 @@ class IndicatorManager {
             return;
         }
 
-        const indicator = this._indicator;
-        const slider = this._slider;
-
-        indicator._sliderChanged = indicator.__orig__sliderChanged;
-        slider.disconnect(indicator._sliderChangedId);
-        indicator._sliderChangedId = slider.connect(
-            'notify::value', indicator._sliderChanged.bind(indicator));
-        delete indicator.__orig__sliderChanged;
-
-        indicator._sync = indicator.__orig__sync;
-        delete indicator.__orig__sync;
-
         this._indicator = null;
         this._slider = null;
+
+        // Cleanup custom slider
+        if (this._overlayBrightnessItem) {
+            this._overlayBrightnessItem.destroy();
+            this._overlayBrightnessItem = null;
+        }
+
+        // Cleanup hardware brightness watcher
+        if (this._hardwareBrightnessChangedId) {
+            if (this._indicator && this._indicator.slider) {
+                this._indicator.slider.disconnect(this._hardwareBrightnessChangedId);
+            }
+            this._hardwareBrightnessChangedId = null;
+        }
 
         // If "use-backlight" is false and slider was being used for adjusting gamma,
         // slider will now revert to its previous use of backlight adjustment. Run
