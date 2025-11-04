@@ -173,13 +173,10 @@ export default class SoftBrightnessExtension extends Extension {
             this._overlayManager.hideOverlays(false);
             this._cursorManager.setActive(false);
         } else {
-            // Must be called before _showOverlays so that the overlay is on top.
-            this._cursorManager.setActive(true);
             this._overlayManager.showOverlays(curBrightness, force);
-            // _showOverlays may not populate _overlays during initializations if we're waiting from the monitor list callback
-            if (!this._overlayManager.initialized()) {
-                this._cursorManager.setActive(false);
-            }
+            // Only activate cursor if overlays are actuaally initialized
+            const shouldActivateCursor = this._overlayManager.initialized();
+            this._cursorManager.setActive(shouldActivateCursor);
         }
     }
 
