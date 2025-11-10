@@ -164,13 +164,9 @@ export default class SoftBrightnessExtension extends Extension {
             this._overlayManager.hideOverlays(false);
             this._cursorManager.setActive(false);
         } else {
-            // Must be called before _showOverlays so that the overlay is on top.
-            this._cursorManager.setActive(true);
             this._overlayManager.showOverlays(curBrightness, force);
-            // _showOverlays may not populate _overlays during initializations if we're waiting from the monitor list callback
-            if (!this._overlayManager.initialized()) {
-                this._cursorManager.setActive(false);
-            }
+            // Only activate cursor if overlays were successfully created
+            this._cursorManager.setActive(this._overlayManager.initialized());
         }
     }
 
@@ -888,6 +884,10 @@ class OverlayManager {
         this._logger.log_debug('_showOverlays(' + brightness + ', ' + force + ')');
         if (this._overlays == null || force) {
             const monitors = this._monitorManager.getMonitors();
+            if (monitors == null) {
+                this._logger.log_debug('_showOverlays(): monitors not ready yet, skipping');
+                return;
+            }
             if (force) {
                 this.hideOverlays(false);
             }
@@ -1033,24 +1033,19 @@ class MonitorManager {
     }
 
     getMonitors() {
+        if (this._monitorNames == null) {
+            this._logger.log_debug('getMonitors(): _monitorNames not ready yet, returning null');
+            return null;
+        }
+
         const enabledMonitors = this._settings.get_string('monitors');
         let monitors;
         this._logger.log_debug('_showOverlays(): enabledMonitors="' + enabledMonitors + '"');
         if (enabledMonitors == 'all') {
             monitors = Main.layoutManager.monitors;
         } else if (enabledMonitors == 'built-in' || enabledMonitors == 'external') {
-            if (this._monitorNames == null) {
-                this._logger.log_debug('_showOverlays(): skipping run as _monitorNames hasn\'t been set yet.');
-                return null;
-            }
-            let builtinMonitorName = this._settings.get_string('builtin-monitor');
+            const builtinMonitorName = this._settings.get_string('builtin-monitor');
             this._logger.log_debug('_showOverlays(): builtinMonitorName="' + builtinMonitorName + '"');
-            if (builtinMonitorName == '' || builtinMonitorName == null) {
-                builtinMonitorName = this._monitorNames[Main.layoutManager.primaryIndex];
-                this._logger.log_debug('_showOverlays(): no builtin monitor, setting to "' + builtinMonitorName + '" and skipping run');
-                this._settings.set_string('builtin-monitor', builtinMonitorName);
-                return null;
-            }
             monitors = [];
             for (let i = 0; i < Main.layoutManager.monitors.length; i++) {
                 if ((enabledMonitors == 'built-in' && this._monitorNames[i] == builtinMonitorName) ||
@@ -1086,6 +1081,17 @@ class MonitorManager {
                 }
             }
             this._monitorNames = monitorNames;
+
+            // Auto-detect builtin monitor if not set
+            const builtinMonitorName = this._settings.get_string('builtin-monitor');
+            if ((builtinMonitorName == '' || builtinMonitorName == null) && monitorNames.length > 0) {
+                const detectedBuiltin = monitorNames[Main.layoutManager.primaryIndex];
+                this._logger.log_debug('_on_monitors_change(): auto-detecting builtin monitor: ' + detectedBuiltin);
+                this._settings.set_string('builtin-monitor', detectedBuiltin);
+                // The settings callback will trigger _on_brightness_change, so return early
+                return;
+            }
+
             if (this._changeHookFn !== null) {
                 this._changeHookFn();
             }
