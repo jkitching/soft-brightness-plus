@@ -78,10 +78,11 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             const group = new Adw.PreferencesGroup();
 
             this.enabled_control = new Adw.SwitchRow({
-                title: _('Use backlight control:'),
-                subtitle: this._getDescription('use-backlight'),
+                title: _('Control overlay brightness independently'),
+                subtitle: _('Show a separate slider in the quick settings menu.'),
             });
-            this._settings.bind('use-backlight', this.enabled_control, 'active', Gio.SettingsBindFlags.DEFAULT);
+            // Inverted binding: when switch is ON, use-backlight is false
+            this._settings.bind('use-backlight', this.enabled_control, 'active', Gio.SettingsBindFlags.INVERT_BOOLEAN);
             group.add(this.enabled_control);
 
             const monitorsModel = new Gtk.StringList();

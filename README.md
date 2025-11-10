@@ -213,12 +213,12 @@ Install directly from the [Gnome Shell Extensions
 site](https://extensions.gnome.org/extension/5943/soft-brightness-plus/).
 
 Or download the [zip
-file](https://github.com/jkitching/soft-brightness/releases/download/v42/soft-brightness-plus@joelkitching.com.v42.shell-extension.zip)
+file](https://github.com/jkitching/soft-brightness/releases/download/v44/soft-brightness-plus@joelkitching.com.v44.shell-extension.zip)
 from the GitHub [releases
 page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 
 ``` shell
-gnome-extensions install soft-brightness-plus@joelkitching.com.v42.shell-extension.zip
+gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extension.zip
 ```
 
 ## Building from source
@@ -240,6 +240,22 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v42.shell-extensi
 - To build the extension zip files, run: `ninja -C build extension.zip`, the extension will be found under `build/extension.zip`.
 
 ## Changelog
+
+### Version 44
+#### November 4, 2025
+
+- Add GNOME 49 support:
+  - Migrate cursor visibility API from `set_pointer_visible` to
+    `inhibit_cursor_visibility` / `uninhibit_cursor_visibility`.
+  - Replace monkey-patching of brightness indicator with custom overlay
+    brightness slider (OverlayBrightnessItem) that appears when "Control
+    overlay brightness independently" is enabled.
+  - Use `Main.brightnessManager.globalScale` API when available (GNOME 49+)
+    with fallback to D-Bus proxy for older versions.
+  - Add hardware brightness watcher to sync overlay brightness when
+    controlling hardware and overlay together.
+  - Update preferences UI with clearer labeling: "Control overlay brightness
+    independently" toggle now shows/hides the separate overlay slider.
 
 ### Version 43
 #### April 30, 2025
