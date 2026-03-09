@@ -499,42 +499,53 @@ class IndicatorManager {
 
         // Add to QuickSettings menu right after hardware brightness slider
         const quickSettings = Main.panel.statusArea.quickSettings;
-        const brightnessItem = Main.panel.statusArea.quickSettings._brightness?.quickSettingsItems?.[0];
+        const brightnessItem = quickSettings._brightness?.quickSettingsItems?.[0];
 
-        // The menu.box contains a grid container (St_Widget) which holds all the quick settings items
-        const gridContainer = quickSettings.menu.box.get_child_at_index(0);
+        if (brightnessItem) {
+            const parent = brightnessItem.get_parent();
+            if (parent) {
+                const children = parent.get_children();
+                const brightnessIndex = children.indexOf(brightnessItem);
 
-        if (gridContainer && brightnessItem) {
-            // Find the position of the hardware brightness item in the grid
-            let brightnessPosition = -1;
-            const nChildren = gridContainer.get_n_children();
-
-            for (let i = 0; i < nChildren; i++) {
-                const child = gridContainer.get_child_at_index(i);
-                if (child === brightnessItem) {
-                    brightnessPosition = i;
-                    break;
+                let nextSibling = null;
+                if (brightnessIndex >= 0 && brightnessIndex < children.length - 1) {
+                    nextSibling = children[brightnessIndex + 1];
                 }
-            }
 
-            if (brightnessPosition >= 0) {
-                // Insert right after the hardware brightness slider
-                gridContainer.insert_child_at_index(this._overlayBrightnessItem, brightnessPosition + 1);
-                // Set column-span to 2 so it takes full width like other sliders
-                gridContainer.layout_manager.child_set_property(
-                    gridContainer, this._overlayBrightnessItem, 'column-span', 2);
-                this._logger.log_debug(`IndicatorManager: custom slider inserted at position ${brightnessPosition + 1}`);
-            } else {
-                // Fallback: add at beginning
-                gridContainer.insert_child_at_index(this._overlayBrightnessItem, 0);
-                gridContainer.layout_manager.child_set_property(
-                    gridContainer, this._overlayBrightnessItem, 'column-span', 2);
-                this._logger.log_debug('IndicatorManager: custom slider added at position 0');
+                if (nextSibling && typeof quickSettings.menu.insertItemBefore === 'function') {
+                    try {
+                        quickSettings.menu.insertItemBefore(this._overlayBrightnessItem, nextSibling);
+                    } catch (e) {
+                        parent.insert_child_below(this._overlayBrightnessItem, nextSibling);
+                    }
+                } else if (typeof quickSettings.menu.addItem === 'function') {
+                    try {
+                        quickSettings.menu.addItem(this._overlayBrightnessItem);
+                    } catch (e) {
+                        parent.add_child(this._overlayBrightnessItem);
+                    }
+                } else {
+                    parent.insert_child_at_index(this._overlayBrightnessItem, brightnessIndex + 1);
+                }
+
+                if (parent.layout_manager && typeof parent.layout_manager.child_set_property === 'function') {
+                    try {
+                        parent.layout_manager.child_set_property(
+                            parent, this._overlayBrightnessItem, 'column-span', 2);
+                    } catch(e) {}
+                }
+                
+                this._logger.log_debug('IndicatorManager: custom slider added successfully');
+                return;
             }
-        } else {
-            // Last resort: use addItem
+        }
+        
+        // Fallback
+        if (typeof quickSettings.menu.addItem === 'function') {
             quickSettings.menu.addItem(this._overlayBrightnessItem);
-            this._logger.log_debug('IndicatorManager: custom slider added via addItem');
+            this._logger.log_debug('IndicatorManager: custom slider added via addItem (fallback)');
+        } else {
+            this._logger.log_debug('IndicatorManager: failed to add custom slider');
         }
 
         this._logger.log_debug('IndicatorManager: custom overlay brightness slider added');
