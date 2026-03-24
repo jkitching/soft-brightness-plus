@@ -5,8 +5,8 @@
 ## Overview
 
 Soft Brightness Plus uses an alpha overlay to control the brightness on all
-or some of your monitors.  It integrates smoothly and does not
-interfere with other Gnome Shell features.  It works flawlessly with
+or some of your monitors. It integrates smoothly and does not
+interfere with other Gnome Shell features. It works flawlessly with
 the _Night Light_, the _Magnifier_ from the Accessibility Services, or
 with screen captures (as long as they are initiated by Gnome Shell).
 
@@ -39,19 +39,19 @@ page](https://extensions.gnome.org/local/).
 #### _Use backlight control_
 
 When enabled, Soft Brightness Plus will work together with your computer's
-backlight.  The brightness slider and keyboard brightness hotkeys
+backlight. The brightness slider and keyboard brightness hotkeys
 will control both the backlight and the Soft Brightness Plus overlays.
 This is most useful:
 
-- if you have a backlight and  _Monitors_ is set to _External_, or
+- if you have a backlight and _Monitors_ is set to _External_, or
 
 - if a backlight is detected by Gnome but is not working (like some
   OLED panel laptops which report having a backlight brightness which
-  doesn't exist).  In that latter case _Monitors_ should be set to
+  doesn't exist). In that latter case _Monitors_ should be set to
   _All_.
 
 If _Use backlight control_ is disabled, the Brightness slider will
-only control the Soft Brightness Plus overlays.  The keyboard brightness
+only control the Soft Brightness Plus overlays. The keyboard brightness
 hotkeys will keep their default bindings.
 
 #### _Monitor(s)_
@@ -68,7 +68,7 @@ hotkeys will keep their default bindings.
 
 #### _Built-in monitor_
 
-A list of currently attached monitors is displayed.  Pick from the
+A list of currently attached monitors is displayed. Pick from the
 list which monitor should be considered the built-in monitor.
 
 The setting only has an effect if _Monitor(s)_ is set to _Built-in_ or
@@ -79,16 +79,16 @@ _External_.
 Choose one of:
 
 - _Do not enforce brightness in full-screen_: When an application
-  enters full-screen mode, remove the brightness overlays.  You may
+  enters full-screen mode, remove the brightness overlays. You may
   want to try this setting if your applications' refresh rate is
-  lagging in full-screen.  The application will
+  lagging in full-screen. The application will
   [unredirect](https://passthroughpo.st/linux-desktop-compositors-performance-functionality)
   its window and will bypass Gnome Shell's compositing (this is the
   default for full-screen applications in Gnome Shell unless changed
   by another extension).
 
 - _Brightness enforced in full-screen_: The brightness overlay stays
-  active when an application enters full-screen mode.  This also
+  active when an application enters full-screen mode. This also
   prevents the app from unredirecting its window (its surface will be
   composited with Gnome Shell, and as a side-effect, will be subjected
   to vertical refresh synchronization, ensuring tear-free rendering).
@@ -97,7 +97,7 @@ Choose one of:
 - _Brightness enforced in full-screen, always tear-free_: Works like
   _Brightness enforced in full-screen_, but will still prevent
   full-screen applications from unredirecting their windows even if no
-  brightness overlay is active (brightness is 100%).  Applications
+  brightness overlay is active (brightness is 100%). Applications
   will then always be rendered
   [tear-free](https://en.wikipedia.org/wiki/Screen_tearing), whatever
   the brightness may be. In this mode, Soft Brightness Plus can be used as
@@ -122,7 +122,7 @@ brightness (on/_true_) and keeping the mouse cursor at full brightness
 
 Gnome Shell's handling of cursor tracking can be sometimes buggy and
 can show the wrong cursor type or size when the mouse cursor
-brightness follows the screen brightness.  It also introduces some
+brightness follows the screen brightness. It also introduces some
 pointer motion lag.
 
 Note that if an other Gnome Shell component enables mouse tracking
@@ -134,7 +134,7 @@ brightness will always follow the screen's.
 When toggled on, Soft Brightness Plus will log extra debugging information
 to the system journal (or syslog).
 
-This will be useful if you encounter a bug:  In that case, please turn
+This will be useful if you encounter a bug: In that case, please turn
 _Debug_ on, and try to reproduce the issue with that setting before
 capturing the debug logging.
 
@@ -148,12 +148,12 @@ journalctl -f | grep 'gnome-shell.*soft-brightness-plus'
 
 Soft Brightness Plus will cause extra load on the hardware and therefore
 slightly increase power usage, as it needs to add extra alpha layers
-and track the mouse among other things.  This is true of any Gnome
+and track the mouse among other things. This is true of any Gnome
 Shell extension.
 
 If Soft Brightness Plus controls an LCD panel, changing the brightness will
-not change at all the panel's power consumption.  Use the backlight
-instead:  Changing the backlight brightness will affect power
+not change at all the panel's power consumption. Use the backlight
+instead: Changing the backlight brightness will affect power
 consumption, the lower the brightness, the lower the power usage.
 
 If Soft Brightness Plus controls an OLED panel, changing the brightness
@@ -185,7 +185,7 @@ displays:
 
 #### You have a laptop computer without a backlight
 
-For example an OLED panel or non-functional backlight.  Have
+For example an OLED panel or non-functional backlight. Have
 Soft Brightness Plus control the brightness for all your monitors:
 
 - Set _Use backlight control_ to _On_.
@@ -201,11 +201,11 @@ License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful, but
 WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
 General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with this program.  If not, see [http://www.gnu.org/licenses/].
+along with this program. If not, see [http://www.gnu.org/licenses/].
 
 ## Download / Install
 
@@ -217,7 +217,7 @@ file](https://github.com/jkitching/soft-brightness/releases/download/v44/soft-br
 from the GitHub [releases
 page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 
-``` shell
+```shell
 gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extension.zip
 ```
 
@@ -241,7 +241,15 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 
 ## Changelog
 
+### Version 50
+
+#### march 23, 2026
+
+- Add GNOME 50 support:
+  - no changes on gnome API required
+
 ### Version 44
+
 #### November 4, 2025
 
 - Add GNOME 49 support:
@@ -258,23 +266,27 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
     independently" toggle now shows/hides the separate overlay slider.
 
 ### Version 43
+
 #### April 30, 2025
 
 - In Version 42, enabling "Mouse cursor brightness control" on GNOME 48
   breaks the extension due to `Meta.CursorTracker.get_for_display` having
-  been moved.  Update to the correct `global.backend.get_cursor_tracker`.
+  been moved. Update to the correct `global.backend.get_cursor_tracker`.
 
 ### Version 42
+
 #### April 8, 2025
 
 - Add GNOME 48 support (fix up `*_unredirect_for_display` calls).
 
 ### Version 41
+
 #### October 20, 2024
 
 - Add GNOME 47 support (no code changes).
 
 ### Version 40
+
 #### May 10, 2024
 
 - Fixed some bugs introduced by using `===` and `!==` strict
@@ -282,12 +294,14 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
   truthy/falsy checks.
 
 ### Version 39
+
 #### April 20, 2024
 
 - Rewrite mouse cloning to fix bug (see [GitHub issue](https://github.com/jkitching/soft-brightness-plus/issues/20))
   introduced as of gnome-shell 46.
 
 ### Version 38
+
 #### April 9, 2024
 
 - Update MouseSpriteContent in src/cursor.js to match
@@ -298,6 +312,7 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
   property when changing the "use-backlight" setting.
 
 ### Version 37
+
 #### November 17, 2023
 
 - Re-implement preferences window using Adw.ActionRow.
@@ -308,15 +323,17 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 - Re-implement logger.js instead of using meson-gse.
 
 ### Version 36
+
 #### October 31, 2023
 
 - Changes requested by extensions.gnome.org code review of v35.
 - Update copyright notices at top of files to include my name.
 
 ### Version 35
+
 #### October 20, 2023
 
-- Rewrite to support GNOME 45.  Since it is now required to
+- Rewrite to support GNOME 45. Since it is now required to
   use ECMAScript modules, and since the `import` and `export`
   mechanisms are not compatible with previous GNOME versions,
   declare compatibility bankruptcy, and drop all support for
@@ -335,21 +352,24 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
   large enough to contain all widgets.
 
 ### Version 34
+
 #### May 1, 2023
 
-- Rewrite and simplify screenshot functionality.  No longer
+- Rewrite and simplify screenshot functionality. No longer
   need to handle cases for different GNOME versions.
 - Code formatting: re-tabbing and other minor changes.
 
 ### Version 33
+
 #### April 28, 2023
 
 - Fix a bug which broke disabling and enabling the extension,
   due to `ScreenshotClass` getting registered multiple times.
-- Rename project to "Soft Brightness Plus".  Ensure consistent
+- Rename project to "Soft Brightness Plus". Ensure consistent
   capitalization and formatting of the name.
 
 ### Version 32
+
 #### April 10, 2023
 
 - Fix a bug in checking for `global.backend` before use.
@@ -361,11 +381,13 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
   - Stop storing reference to extension as a global.
 
 ### Version 31
+
 #### April 6, 2023
 
 - Support Gnome Shell 43 and 44.
 
 ### Version 30
+
 #### May 20, 2022
 
 - Support Gnome Shell 42.
@@ -373,17 +395,18 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
   version is now 3.33.90.
 - Fix version detection code to handle non-numeric versions
   (eg. 42.beta).
-- Fix error at startup ("TypeError: this._overlays is null").
+- Fix error at startup ("TypeError: this.\_overlays is null").
 - Meson-gse update: Support js91, meson 0.61.
 - Cleanups.
 
 ### Version 29
+
 #### December 22, 2021
 
 - Fixed long standing issue with _Mouse cursor brightness control_ not
   working on Gnome 40 and later.
 - Declare compatibility with version 40 and 41 of Gnome Shell instead
-  of using minor versions (40.0 and 41.1).  This should clear reports
+  of using minor versions (40.0 and 41.1). This should clear reports
   of the extension being incompatible with well-supported versions.
 - Drop compatibility with Gnome Shell 3.28 and 3.30 (which do not have
   getSettings/initTranslations in ExtensionUtils).
@@ -393,10 +416,11 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 - Clean up code:
   - Remove Lang imports.
   - Use ExtensionUtils for getSettings/initTranslations instead of
-	using meson-gse's convenience.js.
+    using meson-gse's convenience.js.
   - Drop old Gnome Shell 3.28 compatibility code.
 
 ### Version 28
+
 #### December 18, 2021
 
 - Gnome Shell 41 compatibility.
@@ -405,6 +429,7 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 - Add Dutch translation (courtesy of @Vistaus).
 
 ### Version 27
+
 #### March 25, 2021
 
 - Gnome-shell 40.0 compatibility.
@@ -412,31 +437,36 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 - Disable mouse cloning on Gnome-shell 40 and later.
 - Update meson-gse to latest:
   - Now prints the GJS version in the system log at start-up (if debug
-	is enabled).
+    is enabled).
   - Support more mozjs version (78, 68, 52) for build-time syntax
-	checks (`ninja test`).
+    checks (`ninja test`).
 
 ### Version 26
+
 #### November 12, 2020
 
 - Fix mouse cursor offset bug on GS 3.38.
 
 ### Version 25
+
 #### October 30, 2020
 
 - Added Persian translation.
 
 ### Version 23, 24
+
 #### October 29, 2020
 
 - Added Turkish translation.
 
 ### Version 22
+
 #### October 28, 2020
 
 - GS 3.38 compatibility: CursorSprite.set_anchor_point has been removed.
 
 ### Version 21
+
 #### October 8, 2020
 
 - Only disable mouse tracking on Gnome-Shell 3.38 when gjs 1.65 up to
@@ -444,6 +474,7 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 - Report gjs version in log.
 
 ### Version 20
+
 #### October 6, 2020
 
 - Kludgy work-around a Gnome-Shell bug where mouse tracking doesn't
@@ -455,6 +486,7 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 - Support Gnome-Shell 3.38.
 
 ### Version 19
+
 #### April 24, 2020
 
 - Add a preference for toggling mouse cloning.
@@ -462,6 +494,7 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 - Update French translation.
 
 ### Version 18
+
 #### March 12, 2020
 
 - Fix Gnome-shell 3.34 cursor tracking broken on Wayland
@@ -469,6 +502,7 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
   introduced in version 16.
 
 ### Version 17
+
 #### March 11, 2020
 
 - Gnome-shell 3.36 compatibility.
@@ -476,6 +510,7 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 - Update meson-gse to latest.
 
 ### Version 16
+
 #### March 10, 2020
 
 - Re-enable mouse cloning on Wayland GS >= 3.34.1 (work-around only
@@ -486,6 +521,7 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
   backlight control).
 
 ### Version 15
+
 #### October 27, 2019
 
 - Now compatible with GS 3.34 and GS 3.35.1.
@@ -497,34 +533,40 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
   debugging.
 
 ### Version 14
+
 #### August 21, 2019
 
 Fixed broken version 13 update.
+
 - Fix slider not up-to-date at start on GS 3.33.90.
 - Fix broken GS 3.32 compatibility code.
 
 ### Version 13
+
 #### August 19, 2019
 
-- _Note that this version is broken._  Please use versions 12 (on
+- _Note that this version is broken._ Please use versions 12 (on
   Gnome-Shell 3.32 and lower), or version 14 (all Shell versions).
 - Gnome-shell 3.33 compatibility.
 
 ### Version 12
+
 #### April 23, 2019
 
 - Fix Drag-n-Drop (eg. in Overview).
 
 ### Version 11
+
 #### April 23, 2019
 
 - Fix bug where the cursor sprite changes were not tracked correctly
   on Gnome Shell 3.28.
 - Fix regression crash by infinite recursion when attempting to "Use
-  backlight" without a hardware backlight.  If that happens, the
+  backlight" without a hardware backlight. If that happens, the
   extension will use its internal setting for the brightness value.
 
 ### Version 10
+
 #### April 23, 2019
 
 - Fix extension errors on Gnome Shell 3.32.
@@ -539,6 +581,7 @@ Fixed broken version 13 update.
 - Expand documentation.
 
 ### Version 9
+
 #### April 20, 2019
 
 - The mouse pointer is now affected by the brightness.
@@ -547,6 +590,7 @@ Fixed broken version 13 update.
 - Improved code maintainability.
 
 ### Version 8
+
 #### April 16, 2019
 
 - Remove the overlay during screenshots: they are now unaffected by
@@ -556,11 +600,13 @@ Fixed broken version 13 update.
 - Fix bugs.
 
 ### Version 7
+
 #### March 30, 2019
 
 - Fix warning in logger.js that was introduced in version 6.
 
 ### Version 6
+
 #### March 26, 2019
 
 - ES6 / Gnome-Shell 3.32 compatibility (still compatible with 3.30 and lower).
@@ -568,6 +614,7 @@ Fixed broken version 13 update.
 - Minor doc updates.
 
 ### Version 5
+
 #### March 24, 2019
 
 - Updated meson-gse to latest.
@@ -577,6 +624,7 @@ Fixed broken version 13 update.
 - Minor doc updates.
 
 ### Version 4
+
 #### February 11, 2019
 
 - README.md: Meson 0.44.0 or later is required.
@@ -591,6 +639,7 @@ Fixed broken version 13 update.
 - Remove all global variables from extension.
 
 ### Version 3
+
 #### February 6, 2019
 
 - Moved to git.
@@ -603,6 +652,7 @@ Fixed broken version 13 update.
 - Fix a couple of typos.
 
 ### Version 2
+
 #### February 5, 2019
 
 - The extension now removes the standard brightness control and puts its own in place (as opposed to trying to monkey patch the existing control).
@@ -617,6 +667,7 @@ The git release shows as 3 in the source code, but the extension (as built by th
 Let's call it release 2 then.
 
 ### Version 1
+
 #### February 2, 2019
 
 First public release.
