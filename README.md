@@ -241,7 +241,7 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v44.shell-extensi
 
 ## Changelog
 
-### Version 50
+### Version 45
 
 #### march 23, 2026
 
