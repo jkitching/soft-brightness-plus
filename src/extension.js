@@ -501,8 +501,9 @@ class IndicatorManager {
         const quickSettings = Main.panel.statusArea.quickSettings;
         const brightnessItem = Main.panel.statusArea.quickSettings._brightness?.quickSettingsItems?.[0];
 
-        // The menu.box contains a grid container (St_Widget) which holds all the quick settings items
-        const gridContainer = quickSettings.menu.box.get_child_at_index(0);
+        // Use the brightness item's actual parent rather than assuming it's the first child of menu.box,
+        // since other extensions may have reorganized the panel layout.
+        const gridContainer = brightnessItem?.get_parent();
 
         if (gridContainer && brightnessItem) {
             // Find the position of the hardware brightness item in the grid
