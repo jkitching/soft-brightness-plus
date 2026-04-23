@@ -36,7 +36,7 @@
 
 # Boilerplate
 project('soft-brightness-plus',
-	version: '44',
+	version: '45',
 	meson_version: '>= 0.50.0',
 	license: 'GPL3' )
 
