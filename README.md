@@ -245,6 +245,11 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v45.shell-extensi
 #### April 22, 2026
 
 - Add GNOME 50 support (no code changes required).
+- Fix infinite loop when unplugging the only external monitor
+  while brightness overlays were active.
+- Fix overlay slider position in Quick Settings when another
+  extension (e.g. Quick Settings Audio Panel) loads first.
+- Fix crash when disabling the extension.
 
 ### Version 44
 #### November 4, 2025
