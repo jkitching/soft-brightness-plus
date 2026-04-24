@@ -213,12 +213,12 @@ Install directly from the [Gnome Shell Extensions
 site](https://extensions.gnome.org/extension/5943/soft-brightness-plus/).
 
 Or download the [zip
-file](https://github.com/jkitching/soft-brightness/releases/download/v45/soft-brightness-plus@joelkitching.com.v45.shell-extension.zip)
+file](https://github.com/jkitching/soft-brightness/releases/download/v46/soft-brightness-plus@joelkitching.com.v46.shell-extension.zip)
 from the GitHub [releases
 page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 
 ``` shell
-gnome-extensions install soft-brightness-plus@joelkitching.com.v45.shell-extension.zip
+gnome-extensions install soft-brightness-plus@joelkitching.com.v46.shell-extension.zip
 ```
 
 ## Building from source
@@ -240,6 +240,16 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v45.shell-extensi
 - To build the extension zip files, run: `ninja -C build extension.zip`, the extension will be found under `build/extension.zip`.
 
 ## Changelog
+
+### Version 46
+#### April 23, 2026
+
+- Fix issues flagged by extensions.gnome.org automated review:
+  - Use `fillPreferencesWindow` instead of `getPreferencesWidget`.
+  - Properly destroy cursor actors in `disable()`.
+  - Don't ship compiled GSettings schema in extension zip.
+  - Remove dead `set_pointer_visible` fallback code (GS 45+
+    always has `inhibit_cursor_visibility`).
 
 ### Version 45
 #### April 22, 2026
