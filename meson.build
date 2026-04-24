@@ -128,7 +128,7 @@ if gse_schemas != []
 		command:          ['sh', '-c', 'glib-compile-schemas --targetdir . $(dirname @INPUT0@)'],
 		input:            gse_schemas,
 		output:           'gschemas.compiled',
-		install:          true,
+		install:          false,
 		install_dir:      gse_target_dir_schemas)
   install_data(gse_schemas,
 	       install_dir: gse_target_dir_schemas)

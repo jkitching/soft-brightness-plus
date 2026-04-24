@@ -92,11 +92,11 @@ export default class SoftBrightnessExtension extends Extension {
         this._logger.log_debug('Extension enabled');
     }
 
-    // In order to maintain the same brightness settings when the device is
-    // locked and unlocked, "session-modes" includes "unlock-dialog" in
-    // metadata.json.  The extension will remain active while the lock screen
-    // is shown.
     disable() {
+        // In order to maintain the same brightness settings when the device is
+        // locked and unlocked, "session-modes" includes "unlock-dialog" in
+        // metadata.json.  The extension will remain active while the lock screen
+        // is shown.
         this._logger.log_debug('disable(), session mode = ' + Main.sessionMode.currentMode);
 
         this._monitorManager.disable();
@@ -596,6 +596,7 @@ class CursorManager {
 
         // Set/destroyed by _hideSystemCursor/_showSystemCursor
         this._cursorUnfocusInhibited = false;
+        this._cursorHidden = false;
     }
 
     setChangeHook(fn) {
@@ -736,6 +737,7 @@ class CursorManager {
 
         this._cursorTracker = null;
         this._cursorSprite = null;
+        this._cursorActor.destroy();
         this._cursorActor = null;
         this._cursorWatcher = null;
     }
@@ -769,16 +771,9 @@ class CursorManager {
             this._cursorUnfocusInhibited = false;
         }
 
-        if (this._cursorVisibilityChangedId) {
-            this._cursorTracker.disconnect(this._cursorVisibilityChangedId);
-            delete this._cursorVisibilityChangedId;
-
-            // In GS 45, set_pointer_visible was replaced by uninhibit_cursor_visibility.
-            if (this._cursorTracker.uninhibit_cursor_visibility !== undefined) {
-                this._cursorTracker.uninhibit_cursor_visibility();
-            } else {
-                this._cursorTracker.set_pointer_visible(true);
-            }
+        if (this._cursorHidden) {
+            this._cursorHidden = false;
+            this._cursorTracker.uninhibit_cursor_visibility();
         }
     }
 
@@ -790,17 +785,9 @@ class CursorManager {
             this._cursorUnfocusInhibited = true;
         }
 
-        if (!this._cursorVisibilityChangedId) {
-            // In GS 45, set_pointer_visible was replaced by inhibit_cursor_visibility.
-            if (this._cursorTracker.inhibit_cursor_visibility !== undefined) {
-                this._cursorTracker.inhibit_cursor_visibility();
-            } else {
-                this._cursorTracker.set_pointer_visible(false);
-            }
-            this._cursorVisibilityChangedId = this._cursorTracker.connect('visibility-changed', () => {
-                if (this._cursorTracker.get_pointer_visible())
-                    this._cursorTracker.set_pointer_visible(false);
-            });
+        if (!this._cursorHidden) {
+            this._cursorHidden = true;
+            this._cursorTracker.inhibit_cursor_visibility();
         }
     }
 }

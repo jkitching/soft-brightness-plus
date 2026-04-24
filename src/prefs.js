@@ -27,8 +27,8 @@ import {
 import * as Utils from './utils.js';
 
 export default class SoftBrightnessPreferences extends ExtensionPreferences {
-    getPreferencesWidget() {
-        return new PreferencesPage(this.getSettings(), this.metadata);
+    fillPreferencesWindow(window) {
+        window.add(new PreferencesPage(this.getSettings(), this.metadata));
     }
 }
 
