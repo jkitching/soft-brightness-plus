@@ -597,6 +597,7 @@ class CursorManager {
         // Set/destroyed by _hideSystemCursor/_showSystemCursor
         this._cursorUnfocusInhibited = false;
         this._cursorHidden = false;
+        this._cursorVisibilityFallback = false;
     }
 
     setChangeHook(fn) {
@@ -773,7 +774,12 @@ class CursorManager {
 
         if (this._cursorHidden) {
             this._cursorHidden = false;
-            this._cursorTracker.uninhibit_cursor_visibility();
+            if (this._cursorTracker.uninhibit_cursor_visibility !== undefined) {
+                this._cursorTracker.uninhibit_cursor_visibility();
+            } else if (this._cursorVisibilityFallback) {
+                global.stage.set_cursor_type(Clutter.CursorType.DEFAULT);
+                this._cursorVisibilityFallback = false;
+            }
         }
     }
 
@@ -787,7 +793,12 @@ class CursorManager {
 
         if (!this._cursorHidden) {
             this._cursorHidden = true;
-            this._cursorTracker.inhibit_cursor_visibility();
+            if (this._cursorTracker.inhibit_cursor_visibility !== undefined) {
+                this._cursorTracker.inhibit_cursor_visibility();
+            } else {
+                global.stage.set_cursor_type(Clutter.CursorType.NONE);
+                this._cursorVisibilityFallback = true;
+            }
         }
     }
 }
