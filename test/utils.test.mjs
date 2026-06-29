@@ -203,6 +203,76 @@ describe('utils.js – patchFunction', () => {
     });
 });
 
+// ── patchFunction with postHook (GS 46 Promise chaining fix) ──
+
+function patchFunction_WITH_POSTHOOK(object, fname, preHook, postHook) {
+    const saved = object[fname];
+    if (saved === undefined) {
+        return () => {};
+    }
+    object[fname] = function(...args) {
+        preHook(fname);
+        const result = saved.apply(this, args);
+        if (postHook !== undefined) {
+            if (result !== null && result !== undefined && typeof result.then === 'function') {
+                return result.then(
+                    r => { postHook(fname); return r; },
+                    e => { postHook(fname); throw e; }
+                );
+            }
+            postHook(fname);
+        }
+        return result;
+    };
+    return () => object[fname] = saved;
+}
+
+describe('utils.js – patchFunction postHook (GS 46 fix)', () => {
+    test('postHook fires after synchronous function', () => {
+        const calls = [];
+        const obj = { snap() { calls.push('snap'); return 42; } };
+        patchFunction_WITH_POSTHOOK(obj, 'snap', () => calls.push('pre'), () => calls.push('post'));
+        const result = obj.snap();
+        assert.deepEqual(calls, ['pre', 'snap', 'post']);
+        assert.equal(result, 42);
+    });
+
+    test('postHook fires after resolved Promise', async () => {
+        const calls = [];
+        const obj = { snap() { calls.push('snap'); return Promise.resolve('done'); } };
+        patchFunction_WITH_POSTHOOK(obj, 'snap', () => calls.push('pre'), () => calls.push('post'));
+        const result = await obj.snap();
+        assert.deepEqual(calls, ['pre', 'snap', 'post']);
+        assert.equal(result, 'done');
+    });
+
+    test('postHook fires even when Promise rejects', async () => {
+        const calls = [];
+        const obj = { snap() { calls.push('snap'); return Promise.reject(new Error('oops')); } };
+        patchFunction_WITH_POSTHOOK(obj, 'snap', () => calls.push('pre'), () => calls.push('post'));
+        await assert.rejects(() => obj.snap(), /oops/);
+        assert.deepEqual(calls, ['pre', 'snap', 'post']);
+    });
+
+    test('no postHook: synchronous return value is unchanged', () => {
+        const obj = { snap() { return 99; } };
+        patchFunction_WITH_POSTHOOK(obj, 'snap', () => {});
+        assert.equal(obj.snap(), 99);
+    });
+
+    test('revert restores original after postHook patch', async () => {
+        const calls = [];
+        const obj = { snap() { calls.push('original'); return Promise.resolve('x'); } };
+        const revert = patchFunction_WITH_POSTHOOK(obj, 'snap', () => calls.push('pre'), () => calls.push('post'));
+        await obj.snap();
+        assert.deepEqual(calls, ['pre', 'original', 'post']);
+        revert();
+        calls.length = 0;
+        await obj.snap();
+        assert.deepEqual(calls, ['original'], 'hooks no longer fire after revert');
+    });
+});
+
 describe('utils.js – getMonitorConfig error paths', () => {
     test('empty result array → error callback', (t, done) => {
         const proxy = { GetCurrentStateRemote(cb) { cb([]); } };

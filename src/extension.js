@@ -266,11 +266,10 @@ class ScreenshotManager {
         // area, desktop, and interactive screenshots.  This is unnecessary for
         // window screenshots, so skip the `screenshot_window` function.
         //
-        // Note that in GS 3.38+, these screenshot functions return Promises:
-        // https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1126
-        // After dropping support for GS 3.36-, consider modifying Utils.patchFunction
-        // to support both a pre-hook and a post-hook, using Promise's `then()` to
-        // chain the post-hook function.
+        // In GS 46+, Gio._promisify wraps these methods and captures _finish by
+        // reference at startup.  Patching _finish after that point has no effect,
+        // so the post-capture hook must be chained onto the returned Promise instead.
+        // patchFunction handles this automatically when a postHook is provided.
         this._logger.log_debug('_enableScreenshotPatch()');
         const proto = Shell.Screenshot.prototype;
         const targetFns = [
@@ -278,10 +277,9 @@ class ScreenshotManager {
             'screenshot_area',
             ...proto.screenshot_stage_to_content ? ['screenshot_stage_to_content'] : []
         ];
-        this._screenshotRevertFns = [
-            ...targetFns.map(fname => Utils.patchFunction(proto, fname, preCapture)),
-            ...targetFns.map(fname => Utils.patchFunction(proto, fname + '_finish', postCapture)),
-        ];
+        this._screenshotRevertFns = targetFns.map(fname =>
+            Utils.patchFunction(proto, fname, preCapture, postCapture)
+        );
     }
 
     disable() {
