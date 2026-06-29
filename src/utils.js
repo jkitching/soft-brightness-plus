@@ -60,10 +60,10 @@ export function getMonitorConfig(displayConfigProxy, callback) {
                     return;
                 }
                 const props = output[7];
-                const displayName = props['display-name'].get_string()[0];
+                let displayName = props['display-name'].get_string()[0];
                 const connectorName = output[4];
                 if (!displayName || displayName == '') {
-                    const displayName = 'Monitor on output ' + connectorName;
+                    displayName = 'Monitor on output ' + connectorName;
                 }
                 monitors.push([displayName, connectorName]);
             }
