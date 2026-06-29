@@ -51,9 +51,6 @@ export const MouseSpriteContent = GObject.registerClass({
     }
 
     set texture(coglTexture) {
-        if (this._texture === coglTexture)
-            return;
-
         let oldTexture = this._texture;
         this._texture = coglTexture;
         this.invalidate();
