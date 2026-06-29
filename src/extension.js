@@ -976,6 +976,7 @@ class MonitorManager {
         this._settings = settings;
         this._extPath = extPath;
 
+        this._disabled = false;
         this._monitorsChangedConnection = null;
         this._displayConfigProxy = null;
         this._backendManager = null;
@@ -984,9 +985,12 @@ class MonitorManager {
     }
 
     enable() {
+        this._disabled = false;
         this._logger.log_debug('_enableMonitor2ing()');
         this._backendManager = global.backend.get_monitor_manager();
         Utils.newDisplayConfig(this._extPath, (proxy, error) => {
+            if (this._disabled)
+                return;
             if (error) {
                 this._logger.log('newDisplayConfig() callback: Cannot get Display Config: ' + error);
                 return;
@@ -1000,6 +1004,7 @@ class MonitorManager {
     }
 
     disable() {
+        this._disabled = true;
         this._logger.log_debug('_disableMonitor2ing()');
 
         Main.layoutManager.disconnect(this._monitorsChangedConnection);
@@ -1057,6 +1062,8 @@ class MonitorManager {
         }
         this._logger.log_debug('_on_monitors_change()');
         Utils.getMonitorConfig(this._displayConfigProxy, (result, error) => {
+            if (this._disabled)
+                return;
             if (error) {
                 this._logger.log('_on_monitors_change(): cannot get Monitor Config: ' + error);
                 return;
