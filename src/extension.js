@@ -544,8 +544,10 @@ class IndicatorManager {
     disable() {
         // If _enableTimeoutId is non-null, _enable() has not run yet,
         // and will not run.
-        GLib.source_remove(this._enableTimeoutId);
-        this._enableTimeoutId = null;
+        if (this._enableTimeoutId !== null) {
+            GLib.source_remove(this._enableTimeoutId);
+            this._enableTimeoutId = null;
+        }
 
         // Cleanup custom slider
         if (this._overlayBrightnessItem) {
