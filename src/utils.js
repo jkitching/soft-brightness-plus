@@ -76,6 +76,9 @@ export function getMonitorConfig(displayConfigProxy, callback) {
 // when run, removes the preHook, and restores original functionality.
 export function patchFunction(object, fname, preHook) {
     const saved = object[fname];
+    if (saved === undefined) {
+        return () => {};
+    }
     object[fname] = function(...args) {
         preHook(fname);
         return saved.apply(this, args);
