@@ -221,6 +221,12 @@ page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 gnome-extensions install soft-brightness-plus@joelkitching.com.v47.shell-extension.zip
 ```
 
+If you're upgrading from an existing installation, add `--force`:
+
+``` shell
+gnome-extensions install --force soft-brightness-plus@joelkitching.com.v47.shell-extension.zip
+```
+
 ## Building from source
 
 ### Requirements
