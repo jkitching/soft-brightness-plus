@@ -213,12 +213,12 @@ Install directly from the [Gnome Shell Extensions
 site](https://extensions.gnome.org/extension/5943/soft-brightness-plus/).
 
 Or download the [zip
-file](https://github.com/jkitching/soft-brightness/releases/download/v46/soft-brightness-plus@joelkitching.com.v46.shell-extension.zip)
+file](https://github.com/jkitching/soft-brightness-plus/releases/download/v47/soft-brightness-plus@joelkitching.com.v47.shell-extension.zip)
 from the GitHub [releases
 page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 
 ``` shell
-gnome-extensions install soft-brightness-plus@joelkitching.com.v46.shell-extension.zip
+gnome-extensions install soft-brightness-plus@joelkitching.com.v47.shell-extension.zip
 ```
 
 ## Building from source
@@ -240,6 +240,30 @@ gnome-extensions install soft-brightness-plus@joelkitching.com.v46.shell-extensi
 - To build the extension zip files, run: `ninja -C build extension.zip`, the extension will be found under `build/extension.zip`.
 
 ## Changelog
+
+### Version 47
+#### June 28, 2026
+
+- Fix monitor name fallback broken by `const` shadowing in
+  `getMonitorConfig()` (closes #31).
+- Fix `patchFunction()` crash on GNOME 46 when
+  `screenshot_finish`/`screenshot_area_finish` don't exist
+  (closes #55, refs #53).
+- Fix `inhibit_cursor_visibility` TypeError on GNOME 46 where
+  the method was removed from `Meta.CursorTracker`
+  (closes #51, closes #53).
+- Fix frozen cursor on GNOME 46: `MouseSpriteContent` was
+  skipping `invalidate()` when the same `CoglTexture` object
+  was reused in-place (closes #52).
+- Fix `GLib.source_remove(null)` in `IndicatorManager.disable()`
+  when the enable timeout had already fired and cleared itself.
+- Fix async race in `MonitorManager`: D-Bus callbacks could
+  access nulled fields after `disable()` (refs #58).
+- Migrate from deprecated `GetResources` to `GetCurrentState`
+  D-Bus method, preventing a mutter crash on cold boot
+  (closes #58).
+- Add test suite: 37 tests, no extra dependencies.
+  Run with `node --test test/*.test.mjs`.
 
 ### Version 46
 #### April 23, 2026
