@@ -775,7 +775,9 @@ class CursorManager {
 
         if (this._cursorHidden) {
             this._cursorHidden = false;
-            this._cursorTracker.uninhibit_cursor_visibility();
+            // In GS 46, uninhibit_cursor_visibility was removed from Meta.CursorTracker.
+            if (typeof this._cursorTracker.uninhibit_cursor_visibility === 'function')
+                this._cursorTracker.uninhibit_cursor_visibility();
         }
     }
 
@@ -789,7 +791,9 @@ class CursorManager {
 
         if (!this._cursorHidden) {
             this._cursorHidden = true;
-            this._cursorTracker.inhibit_cursor_visibility();
+            // In GS 46, inhibit_cursor_visibility was removed from Meta.CursorTracker.
+            if (typeof this._cursorTracker.inhibit_cursor_visibility === 'function')
+                this._cursorTracker.inhibit_cursor_visibility();
         }
     }
 }
