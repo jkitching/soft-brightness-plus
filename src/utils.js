@@ -48,27 +48,27 @@ export function newDisplayConfig(extPath, callback) {
 }
 
 export function getMonitorConfig(displayConfigProxy, callback) {
-    displayConfigProxy.GetResourcesRemote((result) => {
-        if (result.length <= 2) {
-            callback(null, 'Cannot get DisplayConfig: No outputs in GetResources()');
-        } else {
-            const monitors = [];
-            for (let i = 0; i < result[2].length; i++) {
-                const output = result[2][i];
-                if (output.length <= 7) {
-                    callback(null, 'Cannot get DisplayConfig: No properties on output #' + i);
-                    return;
-                }
-                const props = output[7];
-                let displayName = props['display-name'].get_string()[0];
-                const connectorName = output[4];
-                if (!displayName || displayName == '') {
-                    displayName = 'Monitor on output ' + connectorName;
-                }
-                monitors.push([displayName, connectorName]);
-            }
-            callback(monitors, null);
+    // GetResources is deprecated and crashes mutter on cold boot (GNOME 46+).
+    // GetCurrentState returns physical monitors at result[1], each structured as
+    // ((ssss) modes props) where ssss = (connector, vendor, product, serial).
+    displayConfigProxy.GetCurrentStateRemote((result) => {
+        if (result.length < 2) {
+            callback(null, 'Cannot get DisplayConfig: No data in GetCurrentState()');
+            return;
         }
+        const monitors = [];
+        const physicalMonitors = result[1];
+        for (let i = 0; i < physicalMonitors.length; i++) {
+            const monitor = physicalMonitors[i];
+            const connectorName = monitor[0][0];
+            const props = monitor[2];
+            let displayName = props['display-name'] ? props['display-name'].get_string()[0] : '';
+            if (!displayName || displayName == '') {
+                displayName = 'Monitor on output ' + connectorName;
+            }
+            monitors.push([displayName, connectorName]);
+        }
+        callback(monitors, null);
     });
 }
 

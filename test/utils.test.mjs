@@ -5,79 +5,75 @@ import assert from 'node:assert/strict';
 // pure functions. utils.js only imports Gio (for DBusProxy), which we mock.
 import GioMock from './mocks/gio.mjs';
 
-// ── Re-implement getMonitorConfig as it exists in the source (AS-IS, bugs included) ──
-// This lets us confirm the bug, then test the fixed version.
+// ── Helpers matching the GetCurrentState response shape ──
+// Physical monitors in GetCurrentState: result[1]
+// Each monitor: [(ssss), modes, props]  where (ssss) = [connector, vendor, product, serial]
 
-function getMonitorConfig_BUGGY(displayConfigProxy, callback) {
-    displayConfigProxy.GetResourcesRemote((result) => {
-        if (result.length <= 2) {
-            callback(null, 'Cannot get DisplayConfig: No outputs in GetResources()');
-        } else {
-            const monitors = [];
-            for (let i = 0; i < result[2].length; i++) {
-                const output = result[2][i];
-                if (output.length <= 7) {
-                    callback(null, 'Cannot get DisplayConfig: No properties on output #' + i);
-                    return;
-                }
-                const props = output[7];
-                const displayName = props['display-name'].get_string()[0];
-                const connectorName = output[4];
-                if (!displayName || displayName == '') {
-                    const displayName = 'Monitor on output ' + connectorName; // BUG: shadows outer const
-                }
-                monitors.push([displayName, connectorName]);
-            }
-            callback(monitors, null);
-        }
-    });
-}
-
-function getMonitorConfig_FIXED(displayConfigProxy, callback) {
-    displayConfigProxy.GetResourcesRemote((result) => {
-        if (result.length <= 2) {
-            callback(null, 'Cannot get DisplayConfig: No outputs in GetResources()');
-        } else {
-            const monitors = [];
-            for (let i = 0; i < result[2].length; i++) {
-                const output = result[2][i];
-                if (output.length <= 7) {
-                    callback(null, 'Cannot get DisplayConfig: No properties on output #' + i);
-                    return;
-                }
-                const props = output[7];
-                let displayName = props['display-name'].get_string()[0]; // FIX: let instead of const
-                const connectorName = output[4];
-                if (!displayName || displayName == '') {
-                    displayName = 'Monitor on output ' + connectorName; // FIX: assigns to outer variable
-                }
-                monitors.push([displayName, connectorName]);
-            }
-            callback(monitors, null);
-        }
-    });
-}
-
-function makeOutput(displayName, connectorName) {
+function makeMonitor(displayName, connectorName) {
     return [
-        null, null, null, null,
-        connectorName,          // index 4: connector name
-        null, null,
-        { 'display-name': { get_string() { return [displayName]; } } }, // index 7: props
+        [connectorName, 'Vendor', 'Product', 'Serial'],  // index 0: (ssss) identifiers
+        [],                                               // index 1: modes (not used)
+        displayName
+            ? { 'display-name': { get_string() { return [displayName]; } } }
+            : {},                                         // index 2: properties
     ];
 }
 
-function makeProxy(outputs) {
+function makeProxy(monitors) {
     return {
-        GetResourcesRemote(cb) {
-            cb([null, null, outputs]);
+        GetCurrentStateRemote(cb) {
+            cb([42 /* serial */, monitors]);
         },
     };
 }
 
+// ── getMonitorConfig re-implementations ──
+// BUGGY version preserves the original const-shadowing bug (now fixed in source)
+// so the test still documents the before/after behaviour.
+
+function getMonitorConfig_BUGGY(displayConfigProxy, callback) {
+    displayConfigProxy.GetCurrentStateRemote((result) => {
+        const monitors = [];
+        const physicalMonitors = result[1];
+        for (let i = 0; i < physicalMonitors.length; i++) {
+            const monitor = physicalMonitors[i];
+            const connectorName = monitor[0][0];
+            const props = monitor[2];
+            const displayName = props['display-name'] ? props['display-name'].get_string()[0] : '';
+            if (!displayName || displayName == '') {
+                const displayName = 'Monitor on output ' + connectorName; // BUG: shadows outer const
+            }
+            monitors.push([displayName, connectorName]);
+        }
+        callback(monitors, null);
+    });
+}
+
+function getMonitorConfig_FIXED(displayConfigProxy, callback) {
+    displayConfigProxy.GetCurrentStateRemote((result) => {
+        if (result.length < 2) {
+            callback(null, 'Cannot get DisplayConfig: No data in GetCurrentState()');
+            return;
+        }
+        const monitors = [];
+        const physicalMonitors = result[1];
+        for (let i = 0; i < physicalMonitors.length; i++) {
+            const monitor = physicalMonitors[i];
+            const connectorName = monitor[0][0];
+            const props = monitor[2];
+            let displayName = props['display-name'] ? props['display-name'].get_string()[0] : '';
+            if (!displayName || displayName == '') {
+                displayName = 'Monitor on output ' + connectorName;
+            }
+            monitors.push([displayName, connectorName]);
+        }
+        callback(monitors, null);
+    });
+}
+
 describe('utils.js – getMonitorConfig', () => {
     test('normal monitor with display name works', (t, done) => {
-        const proxy = makeProxy([makeOutput('LG Ultra HD', 'DP-1')]);
+        const proxy = makeProxy([makeMonitor('LG Ultra HD', 'DP-1')]);
         getMonitorConfig_BUGGY(proxy, (monitors, err) => {
             assert.equal(err, null);
             assert.equal(monitors[0][0], 'LG Ultra HD');
@@ -86,7 +82,7 @@ describe('utils.js – getMonitorConfig', () => {
     });
 
     test('BUG: empty display-name fallback is silently broken in current code', (t, done) => {
-        const proxy = makeProxy([makeOutput('', 'HDMI-1')]);
+        const proxy = makeProxy([makeMonitor('', 'HDMI-1')]);
         getMonitorConfig_BUGGY(proxy, (monitors, err) => {
             assert.equal(err, null);
             // BUG: fallback doesn't work because inner `const displayName` is shadowed
@@ -97,7 +93,7 @@ describe('utils.js – getMonitorConfig', () => {
     });
 
     test('FIXED: empty display-name gets fallback name', (t, done) => {
-        const proxy = makeProxy([makeOutput('', 'HDMI-1')]);
+        const proxy = makeProxy([makeMonitor('', 'HDMI-1')]);
         getMonitorConfig_FIXED(proxy, (monitors, err) => {
             assert.equal(err, null);
             assert.equal(monitors[0][0], 'Monitor on output HDMI-1');
@@ -105,15 +101,33 @@ describe('utils.js – getMonitorConfig', () => {
         });
     });
 
+    test('FIXED: missing display-name property gets fallback name', (t, done) => {
+        const proxy = makeProxy([makeMonitor(null, 'eDP-1')]);
+        getMonitorConfig_FIXED(proxy, (monitors, err) => {
+            assert.equal(err, null);
+            assert.equal(monitors[0][0], 'Monitor on output eDP-1');
+            done();
+        });
+    });
+
     test('multiple monitors, one with empty name', (t, done) => {
         const proxy = makeProxy([
-            makeOutput('Dell P2419H', 'DP-1'),
-            makeOutput('', 'HDMI-2'),
+            makeMonitor('Dell P2419H', 'DP-1'),
+            makeMonitor('', 'HDMI-2'),
         ]);
         getMonitorConfig_FIXED(proxy, (monitors, err) => {
             assert.equal(err, null);
             assert.equal(monitors[0][0], 'Dell P2419H');
             assert.equal(monitors[1][0], 'Monitor on output HDMI-2');
+            done();
+        });
+    });
+
+    test('connector name is extracted correctly', (t, done) => {
+        const proxy = makeProxy([makeMonitor('Monitor', 'DP-3')]);
+        getMonitorConfig_FIXED(proxy, (monitors, err) => {
+            assert.equal(err, null);
+            assert.equal(monitors[0][1], 'DP-3');
             done();
         });
     });
@@ -191,40 +205,28 @@ describe('utils.js – patchFunction', () => {
 
 describe('utils.js – getMonitorConfig error paths', () => {
     test('empty result array → error callback', (t, done) => {
-        const proxy = { GetResourcesRemote(cb) { cb([]); } };
+        const proxy = { GetCurrentStateRemote(cb) { cb([]); } };
         getMonitorConfig_FIXED(proxy, (monitors, err) => {
             assert.equal(monitors, null);
-            assert.match(err, /No outputs/);
+            assert.match(err, /No data/);
             done();
         });
     });
 
-    test('result with 2 elements (length ≤ 2) → error callback', (t, done) => {
-        const proxy = { GetResourcesRemote(cb) { cb([null, null]); } };
+    test('result with only serial (length < 2) → error callback', (t, done) => {
+        const proxy = { GetCurrentStateRemote(cb) { cb([42]); } };
         getMonitorConfig_FIXED(proxy, (monitors, err) => {
             assert.equal(monitors, null);
-            assert.match(err, /No outputs/);
+            assert.match(err, /No data/);
             done();
         });
     });
 
-    test('output missing properties (length ≤ 7) → error callback', (t, done) => {
-        const shortOutput = [null, null, null, null, 'DP-1', null, null]; // 7 elements, no index 7
-        const proxy = { GetResourcesRemote(cb) { cb([null, null, [shortOutput]]); } };
+    test('zero physical monitors → empty monitors array', (t, done) => {
+        const proxy = makeProxy([]);
         getMonitorConfig_FIXED(proxy, (monitors, err) => {
-            assert.equal(monitors, null);
-            assert.match(err, /No properties on output #0/);
-            done();
-        });
-    });
-
-    test('mixed outputs: one valid, one short → error on second', (t, done) => {
-        const validOutput = makeOutput('Dell P2419H', 'DP-1');
-        const shortOutput = [null, null, null, null, 'HDMI-1', null, null];
-        const proxy = { GetResourcesRemote(cb) { cb([null, null, [validOutput, shortOutput]]); } };
-        getMonitorConfig_FIXED(proxy, (monitors, err) => {
-            assert.equal(monitors, null);
-            assert.match(err, /No properties on output #1/);
+            assert.equal(err, null);
+            assert.deepEqual(monitors, []);
             done();
         });
     });
