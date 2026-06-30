@@ -771,7 +771,6 @@ class CursorManager {
         // device-pixel factor; dividing by it converts device px → logical px.
         const cursorScale = this._cursorTracker.get_scale?.() ?? 1;
         const spriteScale = 1 / cursorScale;
-        this._logger.log_debug(`_updateMouseSprite(): cursorScale=${cursorScale} spriteScale=${spriteScale.toFixed(6)}`);
         this._cursorSprite.set_scale(spriteScale, spriteScale);
 
         const [xHot, yHot] = this._cursorTracker.get_hot();
