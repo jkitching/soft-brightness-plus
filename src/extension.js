@@ -73,7 +73,7 @@ export default class SoftBrightnessExtension extends Extension {
 
         this._screenshotManager.setPreCaptureHook(() => {
             this._cursorManager.setActive(false);
-            this._overlayManager.hideOverlays(false);
+            this._overlayManager.hideOverlaysForScreenshot();
         });
 
         this._screenshotManager.setPostCaptureHook(() => {
@@ -266,11 +266,10 @@ class ScreenshotManager {
         // area, desktop, and interactive screenshots.  This is unnecessary for
         // window screenshots, so skip the `screenshot_window` function.
         //
-        // Note that in GS 3.38+, these screenshot functions return Promises:
-        // https://gitlab.gnome.org/GNOME/gnome-shell/-/merge_requests/1126
-        // After dropping support for GS 3.36-, consider modifying Utils.patchFunction
-        // to support both a pre-hook and a post-hook, using Promise's `then()` to
-        // chain the post-hook function.
+        // In GS 46+, Gio._promisify wraps these methods and captures _finish by
+        // reference at startup.  Patching _finish after that point has no effect,
+        // so the post-capture hook must be chained onto the returned Promise instead.
+        // patchFunction handles this automatically when a postHook is provided.
         this._logger.log_debug('_enableScreenshotPatch()');
         const proto = Shell.Screenshot.prototype;
         const targetFns = [
@@ -278,10 +277,9 @@ class ScreenshotManager {
             'screenshot_area',
             ...proto.screenshot_stage_to_content ? ['screenshot_stage_to_content'] : []
         ];
-        this._screenshotRevertFns = [
-            ...targetFns.map(fname => Utils.patchFunction(proto, fname, preCapture)),
-            ...targetFns.map(fname => Utils.patchFunction(proto, fname + '_finish', postCapture)),
-        ];
+        this._screenshotRevertFns = targetFns.map(fname =>
+            Utils.patchFunction(proto, fname, preCapture, postCapture)
+        );
     }
 
     disable() {
@@ -961,6 +959,23 @@ class OverlayManager {
             default:
                 this._logger.log('_hideOverlays(): Unexpected prevent-unredirect="' + preventUnredirect + '"');
                 break;
+        }
+    }
+
+    // Remove overlays from the stage before screenshot capture.
+    // Deliberately does NOT call _allowUnredirect(): staying in compositing mode
+    // keeps the Clutter scene graph in a valid, fully-painted state so that
+    // clutter_stage_paint_to_content() (the Wayland screenshot path in GS 46+)
+    // captures the background and window content rather than a transparent frame.
+    // Switching unredirect state synchronously just before capture was observed to
+    // invalidate the compositor's scene, producing a fully-transparent result.
+    hideOverlaysForScreenshot() {
+        if (this._overlays != null) {
+            this._logger.log_debug('hideOverlaysForScreenshot(): removing overlays, count=' + this._overlays.length);
+            for (let i = 0; i < this._overlays.length; i++) {
+                this._actorGroup.remove_child(this._overlays[i]);
+            }
+            this._overlays = null;
         }
     }
 
