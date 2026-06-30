@@ -65,5 +65,13 @@
       <summary>Debugging.</summary>
       <description>Enable debugging for the extension.</description>
     </key>
+    <key name="per-workspace-brightness" type="b">
+      <default>false</default>
+      <summary>Per-workspace brightness memory.</summary>
+      <description>When enabled, the extension remembers a separate
+      brightness level for each workspace and restores it automatically
+      when you switch. Set brightness on each workspace once; switching
+      will apply that workspace's saved level thereafter.</description>
+    </key>
   </schema>
 </schemalist>

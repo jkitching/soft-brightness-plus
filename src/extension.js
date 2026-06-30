@@ -90,6 +90,13 @@ export default class SoftBrightnessExtension extends Extension {
         this._indicatorManager.enable();
         this._screenshotManager.enable();
 
+        this._workspaceBrightness = new Map();
+        this._currentWorkspaceIndex = global.workspace_manager.get_active_workspace_index();
+        this._workspaceSwitchId = global.workspace_manager.connect(
+            'active-workspace-changed',
+            () => this._onWorkspaceChanged()
+        );
+
         this._enableSettingsMonitoring();
 
         this._logger.log_debug('Extension enabled');
@@ -101,6 +108,12 @@ export default class SoftBrightnessExtension extends Extension {
         // metadata.json.  The extension will remain active while the lock screen
         // is shown.
         this._logger.log_debug('disable(), session mode = ' + Main.sessionMode.currentMode);
+
+        if (this._workspaceSwitchId) {
+            global.workspace_manager.disconnect(this._workspaceSwitchId);
+            this._workspaceSwitchId = null;
+        }
+        this._workspaceBrightness = null;
 
         this._monitorManager.disable();
         this._cursorManager.disable();
@@ -126,6 +139,29 @@ export default class SoftBrightnessExtension extends Extension {
         this._logger.log('debug = ' + this._logger.get_debug());
     }
 
+    _onWorkspaceChanged() {
+        if (!this._settings.get_boolean('per-workspace-brightness'))
+            return;
+
+        const newIndex = global.workspace_manager.get_active_workspace_index();
+        if (newIndex === this._currentWorkspaceIndex)
+            return;
+
+        // Save brightness for the workspace we're leaving
+        const currentBrightness = this._settings.get_double('current-brightness');
+        this._workspaceBrightness.set(this._currentWorkspaceIndex, currentBrightness);
+        this._currentWorkspaceIndex = newIndex;
+
+        // Restore saved brightness for the arriving workspace, if any
+        if (this._workspaceBrightness.has(newIndex)) {
+            const saved = this._workspaceBrightness.get(newIndex);
+            this._logger.log_debug(`_onWorkspaceChanged: restoring brightness=${saved} for workspace ${newIndex}`);
+            this._settings.set_double('current-brightness', saved);
+        } else {
+            this._logger.log_debug(`_onWorkspaceChanged: no saved brightness for workspace ${newIndex}, keeping ${currentBrightness}`);
+        }
+    }
+
     // Settings monitoring
     _enableSettingsMonitoring() {
         this._logger.log_debug('_enableSettingsMonitoring()');
@@ -138,6 +174,12 @@ export default class SoftBrightnessExtension extends Extension {
             'changed::use-backlight': () => this._on_brightness_change(true),
             'changed::prevent-unredirect': () => this._on_brightness_change(true),
             'changed::debug': () => this._on_debug_change(),
+            'changed::per-workspace-brightness': () => {
+                // When toggled off, clear any saved per-workspace levels so the
+                // current global brightness stays in effect on all workspaces.
+                if (!this._settings.get_boolean('per-workspace-brightness'))
+                    this._workspaceBrightness?.clear();
+            },
         }
         this._removeSettingsCallbacks = Object.entries(callbacks).map(
             ([name, fn]) => {
