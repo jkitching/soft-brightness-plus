@@ -4,6 +4,10 @@
     <value value="1" nick="built-in"/>
     <value value="2" nick="external"/>
   </enum>
+  <enum id="org.gnome.shell.extensions.soft-brightness-plus.dimming-mode">
+    <value value="0" nick="overlay"/>
+    <value value="1" nick="effect"/>
+  </enum>
   <enum id="org.gnome.shell.extensions.soft-brightness-plus.prevent-unredirect">
     <value value="0" nick="never"/>
     <value value="1" nick="when-correcting"/>
@@ -64,6 +68,18 @@
       <default>false</default>
       <summary>Debugging.</summary>
       <description>Enable debugging for the extension.</description>
+    </key>
+    <key name="dimming-mode" enum="org.gnome.shell.extensions.soft-brightness-plus.dimming-mode">
+      <default>"overlay"</default>
+      <summary>Dimming mode.</summary>
+      <description>Controls how the brightness reduction is applied.
+      "overlay" (default): a transparent black actor is placed over the
+      screen — same behaviour as the original extension.
+      "effect": applies a Clutter BrightnessContrastEffect directly to the
+      compositor stage. Highlights are compressed more aggressively than
+      with the overlay (whites dim faster, dark content clamps to black),
+      no overlay actor is created, and the cursor does not need to be
+      cloned. May perform better on some hardware.</description>
     </key>
     <key name="per-workspace-brightness" type="b">
       <default>false</default>

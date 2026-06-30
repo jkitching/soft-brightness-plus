@@ -173,6 +173,7 @@ export default class SoftBrightnessExtension extends Extension {
             'changed::builtin-monitor': () => this._on_brightness_change(true),
             'changed::use-backlight': () => this._on_brightness_change(true),
             'changed::prevent-unredirect': () => this._on_brightness_change(true),
+            'changed::dimming-mode': () => this._on_brightness_change(true),
             'changed::debug': () => this._on_debug_change(),
             'changed::per-workspace-brightness': () => {
                 // When toggled off, clear any saved per-workspace levels so the
@@ -866,6 +867,7 @@ class OverlayManager {
         this._actorGroup = null;
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
+        this._brightnessEffect = null;
     }
 
     enable() {
@@ -906,6 +908,8 @@ class OverlayManager {
     }
 
     initialized() {
+        if (this._settings.get_string('dimming-mode') === 'effect')
+            return this._brightnessEffect !== null;
         return this._overlays !== null && this._overlays.length > 0;
     }
 
@@ -933,6 +937,11 @@ class OverlayManager {
 
     showOverlays(brightness, force) {
         this._logger.log_debug('_showOverlays(' + brightness + ', ' + force + ')');
+        if (this._settings.get_string('dimming-mode') === 'effect') {
+            this._showEffect(brightness);
+            return;
+        }
+
         if (this._overlays == null || force) {
             const monitors = this._monitorManager.getMonitors();
             if (monitors == null) {
@@ -980,7 +989,39 @@ class OverlayManager {
         }
     }
 
+    // Effect mode: apply BrightnessContrastEffect directly to global.stage.
+    // Formula (Clutter convention, values in [-1, 1]):
+    //   out = clamp((in - 0.5) * (1 + contrast) + 0.5 + brightness_offset, 0, 1)
+    // We set contrast=0 and use a pure additive shift so that:
+    //   out = clamp(in + (brightness - 1), 0, 1)
+    // At brightness=1: offset=0 → identity.
+    // At brightness=B<1: whites land at B (same as overlay), near-darks below
+    //   (1-B) luminance clamp to true black rather than scaling toward dark grey.
+    // A future ShaderEffect could apply a non-linear gamma curve here for
+    // true highlight-only compression.
+    _showEffect(brightness) {
+        if (!this._brightnessEffect) {
+            this._logger.log_debug('_showEffect(): creating BrightnessContrastEffect on stage');
+            this._brightnessEffect = new Clutter.BrightnessContrastEffect();
+            global.stage.add_effect_with_name('soft-brightness-plus', this._brightnessEffect);
+        }
+        const brightnessOffset = brightness - 1;
+        this._logger.log_debug('_showEffect(): brightness_offset=' + brightnessOffset.toFixed(3));
+        this._brightnessEffect.brightness = brightnessOffset;
+        this._brightnessEffect.contrast = 0;
+        this._brightnessEffect.enabled = true;
+    }
+
+    _hideEffect() {
+        if (this._brightnessEffect) {
+            this._logger.log_debug('_hideEffect(): removing BrightnessContrastEffect from stage');
+            global.stage.remove_effect(this._brightnessEffect);
+            this._brightnessEffect = null;
+        }
+    }
+
     hideOverlays(forceUnpreventUnredirect) {
+        this._hideEffect();
         if (this._overlays != null) {
             this._logger.log_debug('_hideOverlays(): drop overlays, count=' + this._overlays.length);
             for (let i = 0; i < this._overlays.length; i++) {
@@ -1015,6 +1056,14 @@ class OverlayManager {
     // Switching unredirect state synchronously just before capture was observed to
     // invalidate the compositor's scene, producing a fully-transparent result.
     hideOverlaysForScreenshot() {
+        // Effect mode: disable the effect for the duration of the screenshot.
+        // We store the current brightness parameters so the post-capture hook
+        // can restore them via showOverlays().
+        if (this._brightnessEffect) {
+            this._logger.log_debug('hideOverlaysForScreenshot(): disabling effect for screenshot');
+            this._brightnessEffect.enabled = false;
+            return;
+        }
         if (this._overlays != null) {
             this._logger.log_debug('hideOverlaysForScreenshot(): removing overlays, count=' + this._overlays.length);
             for (let i = 0; i < this._overlays.length; i++) {
