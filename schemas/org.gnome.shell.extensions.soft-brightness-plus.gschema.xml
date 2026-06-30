@@ -7,6 +7,7 @@
   <enum id="org.gnome.shell.extensions.soft-brightness-plus.dimming-mode">
     <value value="0" nick="overlay"/>
     <value value="1" nick="effect"/>
+    <value value="2" nick="shader"/>
   </enum>
   <enum id="org.gnome.shell.extensions.soft-brightness-plus.prevent-unredirect">
     <value value="0" nick="never"/>
@@ -75,11 +76,21 @@
       <description>Controls how the brightness reduction is applied.
       "overlay" (default): a transparent black actor is placed over the
       screen — same behaviour as the original extension.
-      "effect": applies a Clutter BrightnessContrastEffect directly to the
-      compositor stage. Highlights are compressed more aggressively than
-      with the overlay (whites dim faster, dark content clamps to black),
-      no overlay actor is created, and the cursor does not need to be
-      cloned. May perform better on some hardware.</description>
+      "effect": applies a Clutter BrightnessContrastEffect to the stage.
+      No overlay actor; near-darks clamp to black.
+      "shader": applies a GLSL gamma-curve OffscreenEffect to the stage.
+      Highlights are compressed faster than darks — white dims more
+      than near-black at the same slider value. See shader-gamma to
+      tune the curve shape.</description>
+    </key>
+    <key name="shader-gamma" type="d">
+      <range min="1.0" max="4.0"/>
+      <default>2.0</default>
+      <summary>Shader gamma exponent (shader dimming mode only).</summary>
+      <description>Controls the gamma curve used in dimming-mode=shader.
+      1.0 gives the same linear result as the overlay mode. Values above
+      1.0 preserve dark content better while compressing highlights more
+      aggressively — 2.0 is the recommended starting point.</description>
     </key>
     <key name="per-workspace-brightness" type="b">
       <default>false</default>

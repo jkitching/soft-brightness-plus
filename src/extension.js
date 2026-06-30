@@ -20,6 +20,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PointerWatcher from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
 import {QuickSlider} from 'resource:///org/gnome/shell/ui/quickSettings.js';
 import Clutter from 'gi://Clutter';
+import Cogl from 'gi://Cogl';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
@@ -32,6 +33,50 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Logger from './logger.js';
 import * as Utils from './utils.js';
 import { MouseSpriteContent } from './cursor.js';
+
+// Gamma-curve GLSL dimming effect.
+// Applied to global.stage as an OffscreenEffect.  Each frame vfunc_paint_target
+// uploads the current brightness and gamma_k uniforms, then runs the fragment
+// shader which maps: out = brightness * (1 - (1 - in)^gamma_k)
+//   gamma_k = 1  →  identical to linear overlay
+//   gamma_k > 1  →  darks preserved better; highlights compress faster
+// The max() guard prevents pow(negative, non-integer) = NaN.
+const GammaCurveEffect = GObject.registerClass(
+    class GammaCurveEffect extends Shell.GLSLEffect {
+        _init(brightness, gammaK) {
+            super._init();
+            this._brightnessLoc = this.get_uniform_location('u_brightness');
+            this._gammaKLoc = this.get_uniform_location('u_gamma_k');
+            this._brightness = brightness;
+            this._gammaK = gammaK;
+        }
+
+        vfunc_build_pipeline() {
+            const declarations = `
+                uniform float u_brightness;
+                uniform float u_gamma_k;
+            `;
+            const src = `
+                vec3 c = clamp(cogl_color_in.rgb, 0.0, 1.0);
+                c = u_brightness * (1.0 - pow(1.0 - c, vec3(u_gamma_k)));
+                cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_in.a);
+            `;
+            this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, declarations, src, false);
+        }
+
+        vfunc_paint_target(...args) {
+            this.set_uniform_float(this._brightnessLoc, 1, [this._brightness]);
+            this.set_uniform_float(this._gammaKLoc, 1, [this._gammaK]);
+            super.vfunc_paint_target(...args);
+        }
+
+        update(brightness, gammaK) {
+            this._brightness = brightness;
+            this._gammaK = gammaK;
+            this.queue_repaint();
+        }
+    }
+);
 
 export default class SoftBrightnessExtension extends Extension {
     constructor(...args) {
@@ -174,6 +219,7 @@ export default class SoftBrightnessExtension extends Extension {
             'changed::use-backlight': () => this._on_brightness_change(true),
             'changed::prevent-unredirect': () => this._on_brightness_change(true),
             'changed::dimming-mode': () => this._on_brightness_change(true),
+            'changed::shader-gamma': () => this._on_brightness_change(false),
             'changed::debug': () => this._on_debug_change(),
             'changed::per-workspace-brightness': () => {
                 // When toggled off, clear any saved per-workspace levels so the
@@ -868,6 +914,7 @@ class OverlayManager {
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
         this._brightnessEffect = null;
+        this._shaderEffect = null;
     }
 
     enable() {
@@ -908,8 +955,11 @@ class OverlayManager {
     }
 
     initialized() {
-        if (this._settings.get_string('dimming-mode') === 'effect')
+        const mode = this._settings.get_string('dimming-mode');
+        if (mode === 'effect')
             return this._brightnessEffect !== null;
+        if (mode === 'shader')
+            return this._shaderEffect !== null;
         return this._overlays !== null && this._overlays.length > 0;
     }
 
@@ -937,10 +987,19 @@ class OverlayManager {
 
     showOverlays(brightness, force) {
         this._logger.log_debug('_showOverlays(' + brightness + ', ' + force + ')');
-        if (this._settings.get_string('dimming-mode') === 'effect') {
+        const mode = this._settings.get_string('dimming-mode');
+        if (mode === 'effect') {
+            this._hideShaderEffect();
             this._showEffect(brightness);
             return;
         }
+        if (mode === 'shader') {
+            this._hideEffect();
+            this._showShaderEffect(brightness);
+            return;
+        }
+        this._hideEffect();
+        this._hideShaderEffect();
 
         if (this._overlays == null || force) {
             const monitors = this._monitorManager.getMonitors();
@@ -1020,8 +1079,29 @@ class OverlayManager {
         }
     }
 
+    _showShaderEffect(brightness) {
+        const gammaK = this._settings.get_double('shader-gamma');
+        if (!this._shaderEffect) {
+            this._logger.log_debug('_showShaderEffect(): creating GammaCurveEffect on stage (gamma=' + gammaK + ')');
+            this._shaderEffect = new GammaCurveEffect(brightness, gammaK);
+            global.stage.add_effect_with_name('soft-brightness-plus-shader', this._shaderEffect);
+        } else {
+            this._shaderEffect.update(brightness, gammaK);
+        }
+        this._shaderEffect.enabled = true;
+    }
+
+    _hideShaderEffect() {
+        if (this._shaderEffect) {
+            this._logger.log_debug('_hideShaderEffect(): removing GammaCurveEffect from stage');
+            global.stage.remove_effect(this._shaderEffect);
+            this._shaderEffect = null;
+        }
+    }
+
     hideOverlays(forceUnpreventUnredirect) {
         this._hideEffect();
+        this._hideShaderEffect();
         if (this._overlays != null) {
             this._logger.log_debug('_hideOverlays(): drop overlays, count=' + this._overlays.length);
             for (let i = 0; i < this._overlays.length; i++) {
@@ -1056,12 +1136,16 @@ class OverlayManager {
     // Switching unredirect state synchronously just before capture was observed to
     // invalidate the compositor's scene, producing a fully-transparent result.
     hideOverlaysForScreenshot() {
-        // Effect mode: disable the effect for the duration of the screenshot.
-        // We store the current brightness parameters so the post-capture hook
-        // can restore them via showOverlays().
+        // Effect/shader mode: disable for the duration of the screenshot.
+        // The post-capture hook restores via showOverlays() which re-enables.
         if (this._brightnessEffect) {
-            this._logger.log_debug('hideOverlaysForScreenshot(): disabling effect for screenshot');
+            this._logger.log_debug('hideOverlaysForScreenshot(): disabling BrightnessContrastEffect');
             this._brightnessEffect.enabled = false;
+            return;
+        }
+        if (this._shaderEffect) {
+            this._logger.log_debug('hideOverlaysForScreenshot(): disabling GammaCurveEffect');
+            this._shaderEffect.enabled = false;
             return;
         }
         if (this._overlays != null) {
