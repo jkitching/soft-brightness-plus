@@ -100,8 +100,8 @@ export default class SoftBrightnessExtension extends Extension {
         this._logger.log_debug('disable(), session mode = ' + Main.sessionMode.currentMode);
 
         this._monitorManager.disable();
-        this._overlayManager.disable();
         this._cursorManager.disable();
+        this._overlayManager.disable();
         this._indicatorManager.disable();
         this._screenshotManager.disable();
 
@@ -653,11 +653,11 @@ class CursorManager {
     disable() {
         // If _enableTimeoutId is non-null, _enable() has not run yet, and will
         // not run.  Do not run _disable() in this case.
-        GLib.source_remove(this._enableTimeoutId);
         if (this._enableTimeoutId !== null) {
+            GLib.source_remove(this._enableTimeoutId);
+            this._enableTimeoutId = null;
             return;
         }
-        this._enableTimeoutId = null;
         this._changeHookFn = null;
 
         this._settings.disconnect(this._cloneMouseSettingChangedConnection);
@@ -739,7 +739,13 @@ class CursorManager {
 
         this._cursorTracker = null;
         this._cursorSprite = null;
-        this._cursorActor.destroy();
+        if (this._cursorActor !== null) {
+            try {
+                this._cursorActor.destroy();
+            } catch (_e) {
+                // Actor may have already been disposed by C code (e.g. stage teardown)
+            }
+        }
         this._cursorActor = null;
         this._cursorWatcher = null;
     }
@@ -1070,6 +1076,15 @@ class MonitorManager {
                 return;
             if (error) {
                 this._logger.log('_on_monitors_change(): cannot get Monitor Config: ' + error);
+                // Retry after a short delay — can happen in headless/virtual environments
+                // where the virtual monitor hasn't registered with DisplayConfig yet.
+                if (!this._disabled) {
+                    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+                        if (!this._disabled)
+                            this._on_monitors_change();
+                        return GLib.SOURCE_REMOVE;
+                    });
+                }
                 return;
             }
             const monitorNames = [];
