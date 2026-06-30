@@ -962,20 +962,22 @@ class OverlayManager {
         }
     }
 
-    // Like hideOverlays() but keeps the compositor in compositing mode (unredirection
-    // stays prevented).  Used during screenshot capture: overlay actors must be absent
-    // from the stage so they don't appear in the image, but re-enabling unredirection
-    // before the capture causes the compositor to switch to direct scanout, producing
-    // a completely black screenshot.
+    // Like hideOverlays() but keeps the compositor in compositing mode.  Used
+    // during screenshot capture on GS 46+ Wayland: removing overlay actors causes
+    // screenshot_stage_to_content() to return a fully-transparent image because
+    // the shell stage has no content.  Setting opacity=0 instead keeps actors in
+    // the stage (preserving compositing mode) while making them invisible in the
+    // capture.  postCapture restores opacity via showOverlays().
     hideOverlaysForScreenshot() {
         if (this._overlays != null) {
-            this._logger.log_debug('_hideOverlays(): drop overlays for screenshot, count=' + this._overlays.length);
+            this._logger.log_debug('hideOverlaysForScreenshot(): set opacity=0 on overlays, count=' + this._overlays.length);
             for (let i = 0; i < this._overlays.length; i++) {
-                this._actorGroup.remove_child(this._overlays[i]);
+                this._overlays[i].opacity = 0;
             }
-            this._overlays = null;
         }
-        this._preventUnredirect();
+        // Do not change unredirect state — compositing mode is already active
+        // (set by showOverlays) and must stay so for screenshot_stage_to_content()
+        // to capture window content on GS 46+ Wayland.
     }
 
     _preventUnredirect() {
