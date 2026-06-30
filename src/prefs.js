@@ -24,7 +24,6 @@ import {
     gettext as _,
 } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import * as Utils from './utils.js';
 
 export default class SoftBrightnessPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -85,102 +84,6 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             this._settings.bind('use-backlight', this.enabled_control, 'active', Gio.SettingsBindFlags.INVERT_BOOLEAN);
             group.add(this.enabled_control);
 
-            const monitorsModel = new Gtk.StringList();
-            monitorsModel.append(_('All'));
-            monitorsModel.append(_('Built-in'));
-            monitorsModel.append(_('External'));
-            this.monitors_control = new Adw.ComboRow({
-                title: _('Monitor(s):'),
-                subtitle: this._getDescription('monitors'),
-                model: monitorsModel,
-            });
-            this.monitors_control.connect('notify::selected', () => {
-                this._settings.set_enum('monitors', this.monitors_control.selected);
-            });
-            this._settings.connect('changed::monitors', () => {
-                this.monitors_control.set_selected(this._settings.get_enum('monitors'));
-            });
-            group.add(this.monitors_control);
-
-            this.builtinMonitorControl = new Adw.ComboRow({
-                title: _('Built-in monitor:'),
-                subtitle: this._getDescription('builtin-monitor'),
-            });
-            Utils.newDisplayConfig(this._metadata['path'], (function(proxy, error) {
-                if (error) {
-                    console.log('Cannot get DisplayConfig: ' + error);
-                    return;
-                }
-                this.displayConfigProxy = proxy;
-                this._bindBuiltinMonitorControl();
-                this.displayConfigProxy.connectSignal('MonitorsChanged', this._refreshMonitors.bind(this));
-                this._refreshMonitors();
-            }).bind(this));
-            group.add(this.builtinMonitorControl);
-
-            this.add(group);
-        }
-
-        {
-            const group = new Adw.PreferencesGroup({
-                title: _('Full-screen behavior:'),
-                description: this._getDescription('prevent-unredirect'),
-            });
-            const selected = this._settings.get_enum('prevent-unredirect');
-
-            let row;
-
-            row = new Adw.ActionRow({
-                title: _('Do not enforce brightness in full-screen'),
-            });
-            const option0 = new Gtk.CheckButton();
-            if (selected == 0) {
-                option0.set_active(true);
-            }
-            row.add_prefix(option0);
-            row.set_activatable_widget(option0);
-            group.add(row);
-
-            row = new Adw.ActionRow({
-                title: _('Brightness enforced in full-screen'),
-            });
-            const option1 = new Gtk.CheckButton();
-            if (selected == 1) {
-                option1.set_active(true);
-            }
-            option1.set_group(option0);
-            row.add_prefix(option1);
-            row.set_activatable_widget(option1);
-            group.add(row);
-
-            row = new Adw.ActionRow({
-                title: _('Brightness enforced in full-screen, always tear-free'),
-            });
-            const option2 = new Gtk.CheckButton();
-            if (selected == 2) {
-                option2.set_active(true);
-            }
-            option2.set_group(option0);
-            row.add_prefix(option2);
-            row.set_activatable_widget(option2);
-            group.add(row);
-
-            option0.connect('toggled', () => this._settings.set_enum('prevent-unredirect', 0));
-            option1.connect('toggled', () => this._settings.set_enum('prevent-unredirect', 1));
-            option2.connect('toggled', () => this._settings.set_enum('prevent-unredirect', 2));
-            this._settings.connect('changed::prevent-unredirect', () => {
-                if (this.processing_prevent_unredirect) {
-                    return;
-                }
-                this.processing_prevent_unredirect = true;
-                const selected = this._settings.get_enum('prevent-unredirect');
-                const options = [option0, option1, option2];
-                const cur = options.splice(selected, 1)[0];
-                cur.set_active(true);
-                options.forEach((option) => option.set_active(false));
-                this.processing_prevent_unredirect = false;
-            });
-
             this.add(group);
         }
 
@@ -199,6 +102,19 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             });
             this._settings.bind('min-brightness', this.min_brightness_control, 'value', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.min_brightness_control);
+
+            this.shader_gamma_control = new Adw.SpinRow({
+                title: _('Gamma (1..4):'),
+                subtitle: this._getDescription('shader-gamma'),
+                digits: 2,
+                adjustment: new Gtk.Adjustment({
+                    lower: 1.0,
+                    upper: 4.0,
+                    step_increment: 0.1,
+                }),
+            });
+            this._settings.bind('shader-gamma', this.shader_gamma_control, 'value', Gio.SettingsBindFlags.DEFAULT);
+            group.add(this.shader_gamma_control);
 
             this.clone_mouse_control = new Adw.SwitchRow({
                 title: _('Mouse cursor brightness control:'),
@@ -248,48 +164,5 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
 
     _getDescription(name) {
         return _(this._settings.settings_schema.get_key(name).get_description());
-    }
-
-    _bindBuiltinMonitorControl() {
-        this.builtin_monitor_control_signal = this.builtinMonitorControl.connect('notify::selected', () => {
-            this._settings.set_string('builtin-monitor', this.builtinMonitorControl.selected_item.string);
-        });
-        this.builtin_monitor_settings_signal = this._settings.connect('changed::builtin-monitor', () => {
-            this._refreshMonitors();
-        });
-    }
-
-    _unbindBuiltinMonitorControl() {
-        this.builtinMonitorControl.disconnect(this.builtin_monitor_control_signal);
-        this._settings.disconnect(this.builtin_monitor_settings_signal);
-    }
-
-    _refreshMonitors() {
-        Utils.getMonitorConfig(this.displayConfigProxy, (result, error) => {
-            if (error) {
-                console.log('Cannot get DisplayConfig: ' + error);
-                return;
-            }
-            const builtinMonitorName = this._settings.get_string('builtin-monitor');
-            const builtinMonitorModel = new Gtk.StringList();
-            this._unbindBuiltinMonitorControl();
-            let builtinFound = false;
-            let builtinIdx = 0;
-            for (let i = 0; i < result.length; i++) {
-                const displayName = result[i][0];
-                if (displayName == builtinMonitorName) {
-                    builtinFound = true;
-                    builtinIdx = i;
-                }
-                builtinMonitorModel.append(displayName);
-            }
-            if (!builtinFound && builtinMonitorName != '') {
-                builtinMonitorModel.append(builtinMonitorName);
-                builtinIdx = result.length;
-            }
-            this.builtinMonitorControl.set_model(builtinMonitorModel);
-            this.builtinMonitorControl.set_selected(builtinIdx);
-            this._bindBuiltinMonitorControl();
-        });
     }
 });

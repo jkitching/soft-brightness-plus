@@ -101,7 +101,7 @@ export default class SoftBrightnessExtension extends Extension {
         this._logger.log_debug('enable(), session mode = ' + Main.sessionMode.currentMode);
         this._logger.logVersion();
 
-        this._monitorManager = new MonitorManager(this._logger, this._settings, this.path);
+        this._monitorManager = new MonitorManager(this._logger);
         this._overlayManager = new OverlayManager(this._logger, this._settings, this._monitorManager);
         this._cursorManager = new CursorManager(this._logger, this._settings, this._overlayManager);
         this._indicatorManager = new IndicatorManager(this._logger, this._settings);
@@ -109,24 +109,23 @@ export default class SoftBrightnessExtension extends Extension {
 
         this._monitorManager.setChangeHook(() => {
             this._overlayManager.resetSize();
-            this._on_brightness_change(true);
+            this._on_brightness_change();
         });
 
         this._cursorManager.setChangeHook(() => {
-            this._on_brightness_change(true);
+            this._on_brightness_change();
         });
 
         this._screenshotManager.setPreCaptureHook(() => {
-            // Pass suppressChangeHook=true to avoid triggering _on_brightness_change(),
-            // which would toggle _allowUnredirect()/_preventUnredirect() and disrupt
-            // the Mutter compositor pipeline synchronously before clutter_stage_paint_to_content().
+            // suppressChangeHook=true: prevents _on_brightness_change() from re-enabling
+            // the shader synchronously during the Mutter pipeline (before paint_to_content).
             this._cursorManager.setActive(false, true);
             this._overlayManager.hideOverlaysForScreenshot();
         });
 
         this._screenshotManager.setPostCaptureHook(() => {
             this._cursorManager.setActive(true);
-            this._on_brightness_change(false);
+            this._on_brightness_change();
         });
 
         this._monitorManager.enable();
@@ -134,13 +133,6 @@ export default class SoftBrightnessExtension extends Extension {
         this._cursorManager.enable();
         this._indicatorManager.enable();
         this._screenshotManager.enable();
-
-        this._workspaceBrightness = new Map();
-        this._currentWorkspaceIndex = global.workspace_manager.get_active_workspace_index();
-        this._workspaceSwitchId = global.workspace_manager.connect(
-            'active-workspace-changed',
-            () => this._onWorkspaceChanged()
-        );
 
         this._enableSettingsMonitoring();
 
@@ -153,12 +145,6 @@ export default class SoftBrightnessExtension extends Extension {
         // metadata.json.  The extension will remain active while the lock screen
         // is shown.
         this._logger.log_debug('disable(), session mode = ' + Main.sessionMode.currentMode);
-
-        if (this._workspaceSwitchId) {
-            global.workspace_manager.disconnect(this._workspaceSwitchId);
-            this._workspaceSwitchId = null;
-        }
-        this._workspaceBrightness = null;
 
         this._monitorManager.disable();
         this._cursorManager.disable();
@@ -184,49 +170,16 @@ export default class SoftBrightnessExtension extends Extension {
         this._logger.log('debug = ' + this._logger.get_debug());
     }
 
-    _onWorkspaceChanged() {
-        if (!this._settings.get_boolean('per-workspace-brightness'))
-            return;
-
-        const newIndex = global.workspace_manager.get_active_workspace_index();
-        if (newIndex === this._currentWorkspaceIndex)
-            return;
-
-        // Save brightness for the workspace we're leaving
-        const currentBrightness = this._settings.get_double('current-brightness');
-        this._workspaceBrightness.set(this._currentWorkspaceIndex, currentBrightness);
-        this._currentWorkspaceIndex = newIndex;
-
-        // Restore saved brightness for the arriving workspace, if any
-        if (this._workspaceBrightness.has(newIndex)) {
-            const saved = this._workspaceBrightness.get(newIndex);
-            this._logger.log_debug(`_onWorkspaceChanged: restoring brightness=${saved} for workspace ${newIndex}`);
-            this._settings.set_double('current-brightness', saved);
-        } else {
-            this._logger.log_debug(`_onWorkspaceChanged: no saved brightness for workspace ${newIndex}, keeping ${currentBrightness}`);
-        }
-    }
-
     // Settings monitoring
     _enableSettingsMonitoring() {
         this._logger.log_debug('_enableSettingsMonitoring()');
 
         const callbacks = {
-            'changed::min-brightness': () => this._on_brightness_change(false),
-            'changed::current-brightness': () => this._on_brightness_change(false),
-            'changed::monitors': () => this._on_brightness_change(true),
-            'changed::builtin-monitor': () => this._on_brightness_change(true),
-            'changed::use-backlight': () => this._on_brightness_change(true),
-            'changed::prevent-unredirect': () => this._on_brightness_change(true),
-            'changed::dimming-mode': () => this._on_brightness_change(true),
-            'changed::shader-gamma': () => this._on_brightness_change(false),
+            'changed::min-brightness': () => this._on_brightness_change(),
+            'changed::current-brightness': () => this._on_brightness_change(),
+            'changed::use-backlight': () => this._on_brightness_change(),
+            'changed::shader-gamma': () => this._on_brightness_change(),
             'changed::debug': () => this._on_debug_change(),
-            'changed::per-workspace-brightness': () => {
-                // When toggled off, clear any saved per-workspace levels so the
-                // current global brightness stays in effect on all workspaces.
-                if (!this._settings.get_boolean('per-workspace-brightness'))
-                    this._workspaceBrightness?.clear();
-            },
         }
         this._removeSettingsCallbacks = Object.entries(callbacks).map(
             ([name, fn]) => {
@@ -242,7 +195,7 @@ export default class SoftBrightnessExtension extends Extension {
         this._removeSettingsCallbacks = [];
     }
 
-    _on_brightness_change(force) {
+    _on_brightness_change() {
         let curBrightness = this._getBrightnessLevel();
         const minBrightness = this._settings.get_double('min-brightness');
 
@@ -253,10 +206,10 @@ export default class SoftBrightnessExtension extends Extension {
             return;
         }
         if (curBrightness >= 1) {
-            this._overlayManager.hideOverlays(false);
+            this._overlayManager.hideOverlays();
             this._cursorManager.setActive(false);
         } else {
-            this._overlayManager.showOverlays(curBrightness, force);
+            this._overlayManager.showOverlays(curBrightness);
             // Only activate cursor if overlays were successfully created
             this._cursorManager.setActive(this._overlayManager.initialized());
         }
@@ -909,11 +862,9 @@ class OverlayManager {
         this._settings = settings;
         this._monitorManager = monitorManager;
 
-        this._overlays = null;
         this._actorGroup = null;
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
-        this._brightnessEffect = null;
         this._shaderEffect = null;
     }
 
@@ -942,8 +893,7 @@ class OverlayManager {
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
 
-        this.hideOverlays(true);
-        this._overlays = null;
+        this._hideShaderEffect();
 
         global.stage.remove_child(this._actorGroup);
         this._actorGroup.destroy();
@@ -955,12 +905,7 @@ class OverlayManager {
     }
 
     initialized() {
-        const mode = this._settings.get_string('dimming-mode');
-        if (mode === 'effect')
-            return this._brightnessEffect !== null;
-        if (mode === 'shader')
-            return this._shaderEffect !== null;
-        return this._overlays !== null && this._overlays.length > 0;
+        return this._shaderEffect !== null;
     }
 
     addActor(actor) {
@@ -978,105 +923,11 @@ class OverlayManager {
     _restackOverlays() {
         this._logger.log_debug('_restackOverlays()');
         this._actorGroup.get_parent().set_child_above_sibling(this._actorGroup, null);
-        if (this._overlays !== null) {
-            for (let i = 0; i < this._overlays.length; i++) {
-                this._actorGroup.set_child_above_sibling(this._overlays[i], null);
-            }
-        }
     }
 
-    showOverlays(brightness, force) {
-        this._logger.log_debug('_showOverlays(' + brightness + ', ' + force + ')');
-        const mode = this._settings.get_string('dimming-mode');
-        if (mode === 'effect') {
-            this._hideShaderEffect();
-            this._showEffect(brightness);
-            return;
-        }
-        if (mode === 'shader') {
-            this._hideEffect();
-            this._showShaderEffect(brightness);
-            return;
-        }
-        this._hideEffect();
-        this._hideShaderEffect();
-
-        if (this._overlays == null || force) {
-            const monitors = this._monitorManager.getMonitors();
-            if (monitors == null) {
-                this._logger.log_debug('_showOverlays(): monitors not ready yet, skipping');
-                return;
-            }
-            if (force) {
-                this.hideOverlays(false);
-            }
-            const preventUnredirect = this._settings.get_string('prevent-unredirect');
-            switch (preventUnredirect) {
-                case 'always':
-                case 'when-correcting':
-                    this._preventUnredirect();
-                    break;
-                case 'never':
-                    this._allowUnredirect();
-                    break;
-                default:
-                    this._logger.log('_showOverlays(): Unexpected prevent-unredirect="' + preventUnredirect + '"');
-                    break;
-            }
-
-            this._overlays = [];
-            for (let i = 0; i < monitors.length; i++) {
-                const monitor = monitors[i];
-                this._logger.log_debug('Create overlay #' + i + ': ' + monitor.width + 'x' + monitor.height + '@' + monitor.x + ',' + monitor.y);
-                const overlay = new St.Label({
-                    style: 'border-radius: 0px; background-color: rgba(0,0,0,1);',
-                    text: '',
-                });
-                overlay.set_position(monitor.x, monitor.y);
-                overlay.set_width(monitor.width);
-                overlay.set_height(monitor.height);
-
-                this._actorGroup.add_child(overlay);
-                this._overlays.push(overlay);
-            }
-        }
-
-        const opacity = (1.0 - brightness) * 255;
-        for (let i = 0; i < this._overlays.length; i++) {
-            this._logger.log_debug('_showOverlay(): set opacity ' + opacity + ' on overlay #' + i);
-            this._overlays[i].opacity = opacity;
-        }
-    }
-
-    // Effect mode: apply BrightnessContrastEffect directly to global.stage.
-    // Formula (Clutter convention, values in [-1, 1]):
-    //   out = clamp((in - 0.5) * (1 + contrast) + 0.5 + brightness_offset, 0, 1)
-    // We set contrast=0 and use a pure additive shift so that:
-    //   out = clamp(in + (brightness - 1), 0, 1)
-    // At brightness=1: offset=0 → identity.
-    // At brightness=B<1: whites land at B (same as overlay), near-darks below
-    //   (1-B) luminance clamp to true black rather than scaling toward dark grey.
-    // A future ShaderEffect could apply a non-linear gamma curve here for
-    // true highlight-only compression.
-    _showEffect(brightness) {
-        if (!this._brightnessEffect) {
-            this._logger.log_debug('_showEffect(): creating BrightnessContrastEffect on stage');
-            this._brightnessEffect = new Clutter.BrightnessContrastEffect();
-            global.stage.add_effect_with_name('soft-brightness-plus', this._brightnessEffect);
-        }
-        const brightnessOffset = brightness - 1;
-        this._logger.log_debug('_showEffect(): brightness_offset=' + brightnessOffset.toFixed(3));
-        this._brightnessEffect.brightness = brightnessOffset;
-        this._brightnessEffect.contrast = 0;
-        this._brightnessEffect.enabled = true;
-    }
-
-    _hideEffect() {
-        if (this._brightnessEffect) {
-            this._logger.log_debug('_hideEffect(): removing BrightnessContrastEffect from stage');
-            global.stage.remove_effect(this._brightnessEffect);
-            this._brightnessEffect = null;
-        }
+    showOverlays(brightness) {
+        this._logger.log_debug('showOverlays(' + brightness + ')');
+        this._showShaderEffect(brightness);
     }
 
     _showShaderEffect(brightness) {
@@ -1099,219 +950,50 @@ class OverlayManager {
         }
     }
 
-    hideOverlays(forceUnpreventUnredirect) {
-        this._hideEffect();
+    hideOverlays() {
         this._hideShaderEffect();
-        if (this._overlays != null) {
-            this._logger.log_debug('_hideOverlays(): drop overlays, count=' + this._overlays.length);
-            for (let i = 0; i < this._overlays.length; i++) {
-                this._actorGroup.remove_child(this._overlays[i]);
-            }
-            this._overlays = null;
-        }
-
-        let preventUnredirect = this._settings.get_string('prevent-unredirect');
-        if (forceUnpreventUnredirect) {
-            preventUnredirect = 'never';
-        }
-        switch (preventUnredirect) {
-            case 'always':
-                this._preventUnredirect();
-                break;
-            case 'when-correcting':
-            case 'never':
-                this._allowUnredirect();
-                break;
-            default:
-                this._logger.log('_hideOverlays(): Unexpected prevent-unredirect="' + preventUnredirect + '"');
-                break;
-        }
     }
 
-    // Remove overlays from the stage before screenshot capture.
-    // Deliberately does NOT call _allowUnredirect(): staying in compositing mode
-    // keeps the Clutter scene graph in a valid, fully-painted state so that
-    // clutter_stage_paint_to_content() (the Wayland screenshot path in GS 46+)
-    // captures the background and window content rather than a transparent frame.
-    // Switching unredirect state synchronously just before capture was observed to
-    // invalidate the compositor's scene, producing a fully-transparent result.
+    // Disable the shader before screenshot capture so screenshots record at full brightness.
+    // The post-capture hook restores via showOverlays() which re-enables.
     hideOverlaysForScreenshot() {
-        // Effect/shader mode: disable for the duration of the screenshot.
-        // The post-capture hook restores via showOverlays() which re-enables.
-        if (this._brightnessEffect) {
-            this._logger.log_debug('hideOverlaysForScreenshot(): disabling BrightnessContrastEffect');
-            this._brightnessEffect.enabled = false;
-            return;
-        }
         if (this._shaderEffect) {
             this._logger.log_debug('hideOverlaysForScreenshot(): disabling GammaCurveEffect');
             this._shaderEffect.enabled = false;
-            return;
-        }
-        if (this._overlays != null) {
-            this._logger.log_debug('hideOverlaysForScreenshot(): removing overlays, count=' + this._overlays.length);
-            for (let i = 0; i < this._overlays.length; i++) {
-                this._actorGroup.remove_child(this._overlays[i]);
-            }
-            this._overlays = null;
-        }
-    }
-
-    _preventUnredirect() {
-        if (!this._unredirectPrevented) {
-            this._logger.log_debug('_preventUnredirect(): disabling unredirects, prevent-unredirect=' + this._settings.get_string('prevent-unredirect'));
-            // In GS 48, *_unredirect_for_display functions were moved to global compositor.
-            global.compositor.disable_unredirect !== undefined
-              ? global.compositor.disable_unredirect()
-              : Meta.disable_unredirect_for_display(global.display);
-            this._unredirectPrevented = true;
-        }
-    }
-
-    _allowUnredirect() {
-        if (this._unredirectPrevented) {
-            this._logger.log_debug('_allowUnredirect(): enabling unredirects, prevent-unredirect=' + this._settings.get_string('prevent-unredirect'));
-            // In GS 48, *_unredirect_for_display functions were moved to global compositor.
-            global.compositor.enable_unredirect !== undefined
-              ? global.compositor.enable_unredirect()
-              : Meta.enable_unredirect_for_display(global.display);
-            this._unredirectPrevented = false;
         }
     }
 }
 
-// Monitor change handling
+// Monitor change handling — triggers change hook when monitors are reconfigured.
+// The GLSL shader applies to global.stage so there's no per-monitor logic here.
 class MonitorManager {
-    constructor(logger, settings, extPath) {
+    constructor(logger) {
         this._logger = logger;
-        this._settings = settings;
-        this._extPath = extPath;
-
-        this._disabled = false;
         this._monitorsChangedConnection = null;
-        this._displayConfigProxy = null;
-        this._backendManager = null;
-        this._monitorNames = null;
         this._changeHookFn = null;
     }
 
     enable() {
-        this._disabled = false;
-        this._logger.log_debug('_enableMonitor2ing()');
-        this._backendManager = global.backend.get_monitor_manager();
-        Utils.newDisplayConfig(this._extPath, (proxy, error) => {
-            if (this._disabled)
-                return;
-            if (error) {
-                this._logger.log('newDisplayConfig() callback: Cannot get Display Config: ' + error);
-                return;
-            }
-            this._logger.log_debug('newDisplayConfig() callback');
-            this._displayConfigProxy = proxy;
-            this._on_monitors_change();
-        });
-
-        this._monitorsChangedConnection = Main.layoutManager.connect('monitors-changed', this._on_monitors_change.bind(this));
+        this._logger.log_debug('MonitorManager.enable()');
+        this._monitorsChangedConnection = Main.layoutManager.connect(
+            'monitors-changed',
+            () => {
+                this._logger.log_debug('monitors-changed');
+                if (this._changeHookFn !== null)
+                    this._changeHookFn();
+            },
+        );
     }
 
     disable() {
-        this._disabled = true;
-        this._logger.log_debug('_disableMonitor2ing()');
-
+        this._logger.log_debug('MonitorManager.disable()');
         Main.layoutManager.disconnect(this._monitorsChangedConnection);
-
-        this._logger = null;
-        this._settings = null;
-
         this._monitorsChangedConnection = null;
-        this._displayConfigProxy = null;
-        this._backendManager = null;
-        this._monitorNames = null;
         this._changeHookFn = null;
+        this._logger = null;
     }
 
     setChangeHook(fn) {
         this._changeHookFn = fn;
-    }
-
-    setPostCallback(callback) {
-        this._postCallback = callback;
-    }
-
-    getMonitors() {
-        if (this._monitorNames == null) {
-            this._logger.log_debug('getMonitors(): _monitorNames not ready yet, returning null');
-            return null;
-        }
-
-        const enabledMonitors = this._settings.get_string('monitors');
-        let monitors;
-        this._logger.log_debug('_showOverlays(): enabledMonitors="' + enabledMonitors + '"');
-        if (enabledMonitors == 'all') {
-            monitors = Main.layoutManager.monitors;
-        } else if (enabledMonitors == 'built-in' || enabledMonitors == 'external') {
-            const builtinMonitorName = this._settings.get_string('builtin-monitor');
-            this._logger.log_debug('_showOverlays(): builtinMonitorName="' + builtinMonitorName + '"');
-            monitors = [];
-            for (let i = 0; i < Main.layoutManager.monitors.length; i++) {
-                if ((enabledMonitors == 'built-in' && this._monitorNames[i] == builtinMonitorName) ||
-                    (enabledMonitors == 'external' && this._monitorNames[i] != builtinMonitorName)) {
-                    monitors.push(Main.layoutManager.monitors[i]);
-                }
-            }
-        } else {
-            this._logger.log('_showOverlays(): Unhandled "monitors" setting = ' + enabledMonitors);
-            return null;
-        }
-        return monitors;
-    }
-
-    _on_monitors_change() {
-        if (this._displayConfigProxy == null) {
-            this._logger.log_debug('_on_monitors_change(): skipping run as the proxy hasn\'t been set up yet.');
-            return;
-        }
-        this._logger.log_debug('_on_monitors_change()');
-        Utils.getMonitorConfig(this._displayConfigProxy, (result, error) => {
-            if (this._disabled)
-                return;
-            if (error) {
-                this._logger.log('_on_monitors_change(): cannot get Monitor Config: ' + error);
-                // Retry after a short delay — can happen in headless/virtual environments
-                // where the virtual monitor hasn't registered with DisplayConfig yet.
-                if (!this._disabled) {
-                    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
-                        if (!this._disabled)
-                            this._on_monitors_change();
-                        return GLib.SOURCE_REMOVE;
-                    });
-                }
-                return;
-            }
-            const monitorNames = [];
-            for (let i = 0; i < result.length; i++) {
-                const [monitorName, connectorName] = result[i];
-                const monitorIndex = this._backendManager.get_monitor_for_connector(connectorName);
-                this._logger.log_debug('_on_monitors_change(): monitor="' + monitorName + '", connector="' + connectorName + '", index=' + monitorIndex);
-                if (monitorIndex >= 0) {
-                    monitorNames[monitorIndex] = monitorName;
-                }
-            }
-            this._monitorNames = monitorNames;
-
-            // Auto-detect builtin monitor if not set
-            const builtinMonitorName = this._settings.get_string('builtin-monitor');
-            if ((builtinMonitorName == '' || builtinMonitorName == null) && monitorNames.length > 0) {
-                const detectedBuiltin = monitorNames[Main.layoutManager.primaryIndex];
-                this._logger.log_debug('_on_monitors_change(): auto-detecting builtin monitor: ' + detectedBuiltin);
-                this._settings.set_string('builtin-monitor', detectedBuiltin);
-                // The settings callback will trigger _on_brightness_change, so return early
-                return;
-            }
-
-            if (this._changeHookFn !== null) {
-                this._changeHookFn();
-            }
-        });
     }
 }
