@@ -72,7 +72,10 @@ export default class SoftBrightnessExtension extends Extension {
         });
 
         this._screenshotManager.setPreCaptureHook(() => {
-            this._cursorManager.setActive(false);
+            // Pass suppressChangeHook=true to avoid triggering _on_brightness_change(),
+            // which would toggle _allowUnredirect()/_preventUnredirect() and disrupt
+            // the Mutter compositor pipeline synchronously before clutter_stage_paint_to_content().
+            this._cursorManager.setActive(false, true);
             this._overlayManager.hideOverlaysForScreenshot();
         });
 
@@ -623,12 +626,12 @@ class CursorManager {
             'changed::clone-mouse', this._on_clone_mouse_change.bind(this));
     }
 
-    setActive(active) {
+    setActive(active, suppressChangeHook = false) {
         this._active = active;
-        this._update();
+        this._update(suppressChangeHook);
     }
 
-    _update() {
+    _update(suppressChangeHook = false) {
         const newCloned = this._cloneMouseSetting && this._active;
         if (newCloned === this._cloned) {
             return;
@@ -643,7 +646,7 @@ class CursorManager {
         }
         this._cloned = newCloned;
 
-        if (this._changeHookFn !== null) {
+        if (!suppressChangeHook && this._changeHookFn !== null) {
             this._changeHookFn();
         }
     }
