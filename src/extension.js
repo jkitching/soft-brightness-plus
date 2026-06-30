@@ -73,7 +73,7 @@ export default class SoftBrightnessExtension extends Extension {
 
         this._screenshotManager.setPreCaptureHook(() => {
             this._cursorManager.setActive(false);
-            this._overlayManager.hideOverlays(false);
+            this._overlayManager.hideOverlaysForScreenshot();
         });
 
         this._screenshotManager.setPostCaptureHook(() => {
@@ -960,6 +960,22 @@ class OverlayManager {
                 this._logger.log('_hideOverlays(): Unexpected prevent-unredirect="' + preventUnredirect + '"');
                 break;
         }
+    }
+
+    // Like hideOverlays() but keeps the compositor in compositing mode (unredirection
+    // stays prevented).  Used during screenshot capture: overlay actors must be absent
+    // from the stage so they don't appear in the image, but re-enabling unredirection
+    // before the capture causes the compositor to switch to direct scanout, producing
+    // a completely black screenshot.
+    hideOverlaysForScreenshot() {
+        if (this._overlays != null) {
+            this._logger.log_debug('_hideOverlays(): drop overlays for screenshot, count=' + this._overlays.length);
+            for (let i = 0; i < this._overlays.length; i++) {
+                this._actorGroup.remove_child(this._overlays[i]);
+            }
+            this._overlays = null;
+        }
+        this._preventUnredirect();
     }
 
     _preventUnredirect() {
