@@ -962,22 +962,26 @@ class OverlayManager {
         }
     }
 
-    // Like hideOverlays() but keeps the compositor in compositing mode.  Used
-    // during screenshot capture on GS 46+ Wayland: removing overlay actors causes
-    // screenshot_stage_to_content() to return a fully-transparent image because
-    // the shell stage has no content.  Setting opacity=0 instead keeps actors in
-    // the stage (preserving compositing mode) while making them invisible in the
-    // capture.  postCapture restores opacity via showOverlays().
+    // Remove overlays and allow unredirection, then return a Promise that resolves
+    // after ~100ms.  On GS 46+ Wayland, screenshot_stage_to_content() captures
+    // correctly only when unredirection is allowed (direct scanout / KMS path).
+    // Calling _allowUnredirect() and immediately capturing produces a black frame
+    // (Mutter is mid-transition); waiting ~100ms lets the compositor complete the
+    // transition before the caller invokes the screenshot function.
+    // patchFunction supports an async preHook: it chains .then() on the returned
+    // Promise so the original screenshot function only runs after resolve().
     hideOverlaysForScreenshot() {
         if (this._overlays != null) {
-            this._logger.log_debug('hideOverlaysForScreenshot(): set opacity=0 on overlays, count=' + this._overlays.length);
+            this._logger.log_debug('hideOverlaysForScreenshot(): removing overlays, count=' + this._overlays.length);
             for (let i = 0; i < this._overlays.length; i++) {
-                this._overlays[i].opacity = 0;
+                this._actorGroup.remove_child(this._overlays[i]);
             }
+            this._overlays = null;
         }
-        // Do not change unredirect state — compositing mode is already active
-        // (set by showOverlays) and must stay so for screenshot_stage_to_content()
-        // to capture window content on GS 46+ Wayland.
+        this._allowUnredirect();
+        return new Promise(resolve =>
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => { resolve(); return GLib.SOURCE_REMOVE; })
+        );
     }
 
     _preventUnredirect() {
