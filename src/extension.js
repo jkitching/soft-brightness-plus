@@ -962,14 +962,13 @@ class OverlayManager {
         }
     }
 
-    // Remove overlays and allow unredirection, then return a Promise that resolves
-    // after ~100ms.  On GS 46+ Wayland, screenshot_stage_to_content() captures
-    // correctly only when unredirection is allowed (direct scanout / KMS path).
-    // Calling _allowUnredirect() and immediately capturing produces a black frame
-    // (Mutter is mid-transition); waiting ~100ms lets the compositor complete the
-    // transition before the caller invokes the screenshot function.
-    // patchFunction supports an async preHook: it chains .then() on the returned
-    // Promise so the original screenshot function only runs after resolve().
+    // Remove overlays from the stage before screenshot capture.
+    // Deliberately does NOT call _allowUnredirect(): staying in compositing mode
+    // keeps the Clutter scene graph in a valid, fully-painted state so that
+    // clutter_stage_paint_to_content() (the Wayland screenshot path in GS 46+)
+    // captures the background and window content rather than a transparent frame.
+    // Switching unredirect state synchronously just before capture was observed to
+    // invalidate the compositor's scene, producing a fully-transparent result.
     hideOverlaysForScreenshot() {
         if (this._overlays != null) {
             this._logger.log_debug('hideOverlaysForScreenshot(): removing overlays, count=' + this._overlays.length);
@@ -978,10 +977,6 @@ class OverlayManager {
             }
             this._overlays = null;
         }
-        this._allowUnredirect();
-        return new Promise(resolve =>
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => { resolve(); return GLib.SOURCE_REMOVE; })
-        );
     }
 
     _preventUnredirect() {
