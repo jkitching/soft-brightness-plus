@@ -764,10 +764,18 @@ class CursorManager {
             this._cursorSprite.hide();
         }
 
+        // get_sprite() returns a texture in device pixels; actor coords are logical.
+        // On fractional/HiDPI displays these differ, making the cloned cursor
+        // appear larger than the real one.  get_scale() (Mutter ≥ 44) gives the
+        // device-pixel factor; dividing by it converts device px → logical px.
+        const cursorScale = this._cursorTracker.get_scale?.() ?? 1;
+        const spriteScale = 1 / cursorScale;
+        this._cursorSprite.set_scale(spriteScale, spriteScale);
+
         const [xHot, yHot] = this._cursorTracker.get_hot();
         this._cursorSprite.set({
-            translation_x: -xHot,
-            translation_y: -yHot,
+            translation_x: -xHot * spriteScale,
+            translation_y: -yHot * spriteScale,
         });
     }
 
