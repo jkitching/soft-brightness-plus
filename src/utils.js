@@ -74,29 +74,44 @@ export function getMonitorConfig(displayConfigProxy, callback) {
 
 // Patches the given function with a preHook and optional postHook.  Returns a
 // callback that, when run, removes the hooks and restores original functionality.
-// If the patched function returns a Promise and postHook is provided, postHook is
-// chained via .then() so it fires after the async operation completes (including
-// on rejection).  This is necessary in GS 46+ where Gio._promisify captures the
-// internal _finish callback by reference at startup, making _finish patching
-// ineffective.
+//
+// If preHook returns a Promise, the original function is deferred until the
+// Promise resolves.  This allows async pre-work (e.g. a GLib timeout to wait
+// for Mutter to complete a compositing-mode transition before a screenshot).
+//
+// If the original function returns a Promise and postHook is provided, postHook
+// is chained via .then() so it fires after the async operation completes
+// (including on rejection).  This is necessary in GS 46+ where Gio._promisify
+// captures the internal _finish callback by reference at startup, making
+// _finish patching ineffective.
 export function patchFunction(object, fname, preHook, postHook) {
     const saved = object[fname];
     if (saved === undefined) {
         return () => {};
     }
     object[fname] = function(...args) {
-        preHook(fname);
-        const result = saved.apply(this, args);
-        if (postHook !== undefined) {
-            if (result !== null && result !== undefined && typeof result.then === 'function') {
-                return result.then(
-                    r => { postHook(fname); return r; },
-                    e => { postHook(fname); throw e; }
-                );
+        const self = this;
+        const runSaved = () => {
+            const result = saved.apply(self, args);
+            if (postHook !== undefined) {
+                if (result !== null && result !== undefined && typeof result.then === 'function') {
+                    return result.then(
+                        r => { postHook(fname); return r; },
+                        e => { postHook(fname); throw e; }
+                    );
+                }
+                postHook(fname);
             }
-            postHook(fname);
+            return result;
+        };
+        const preResult = preHook(fname);
+        if (preResult !== null && preResult !== undefined && typeof preResult.then === 'function') {
+            return preResult.then(
+                () => runSaved(),
+                e => { if (postHook !== undefined) postHook(fname); throw e; }
+            );
         }
-        return result;
+        return runSaved();
     };
     return () => object[fname] = saved;
 }
