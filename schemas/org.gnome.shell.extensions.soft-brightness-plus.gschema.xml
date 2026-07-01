@@ -49,13 +49,13 @@
     <key name="brightness-up" type="as">
       <default>['&lt;Shift&gt;XF86MonBrightnessUp']</default>
       <summary>Keyboard shortcut: increase brightness.</summary>
-      <description>Keyboard shortcut to increase the overlay brightness by one step (5%).
+      <description>Keyboard shortcut to increase the brightness by one step (5%).
       Set to an empty list to disable.</description>
     </key>
     <key name="brightness-down" type="as">
       <default>['&lt;Shift&gt;XF86MonBrightnessDown']</default>
       <summary>Keyboard shortcut: decrease brightness.</summary>
-      <description>Keyboard shortcut to decrease the overlay brightness by one step (5%).
+      <description>Keyboard shortcut to decrease the brightness by one step (5%).
       Set to an empty list to disable.</description>
     </key>
     <key name="debug" type="b">
@@ -67,11 +67,10 @@
     <key name="shader-gamma" type="d">
       <range min="1.0" max="4.0"/>
       <default>2.0</default>
-      <summary>Shader gamma exponent (shader dimming mode only).</summary>
-      <description>Controls the gamma curve used in dimming-mode=shader.
-      1.0 gives the same linear result as the overlay mode. Values above
-      1.0 preserve dark content better while compressing highlights more
-      aggressively — 2.0 is the recommended starting point.</description>
+      <summary>Gamma curve exponent.</summary>
+      <description>Controls the gamma curve used for dimming. A value of 1.0
+      is linear. Values above 1.0 preserve shadows better while compressing
+      highlights more aggressively — 2.0 is the recommended starting point.</description>
     </key>
     <key name="per-workspace-brightness" type="b">
       <default>false</default>
