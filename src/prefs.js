@@ -102,11 +102,13 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             // White compression as an expander: the enable-switch acts as the
             // mode toggle, and the strength slider is only visible when active.
             const initialGamma = this._settings.get_double('shader-gamma');
+            const wcEnabled = initialGamma > 1.0;
             this.white_compression_row = new Adw.ExpanderRow({
                 title: _('White compression'),
                 subtitle: _('Reshapes the brightness curve so whites are less harsh without darkening the whole screen.'),
                 show_enable_switch: true,
-                enable_expansion: initialGamma > 1.0,
+                enable_expansion: wcEnabled,
+                expanded: wcEnabled,
             });
 
             this.shader_gamma_control = new Adw.SpinRow({
