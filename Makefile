@@ -18,7 +18,7 @@ MO_FILES := $(addprefix $(BUILD_DIR)/locale/,$(addsuffix /LC_MESSAGES/$(DOMAIN).
 # Derive VCS tag from git (falls back to "unknown")
 VCS_TAG := $(shell git describe --tags --long --always 2>/dev/null || echo unknown)
 
-.PHONY: all zip dist install clean test
+.PHONY: all zip dist install clean test test-e2e
 
 all: $(BUILD_DIR)/metadata.json $(BUILD_DIR)/schemas/gschemas.compiled $(MO_FILES)
 
@@ -65,13 +65,27 @@ install: all
 	@echo "Installed to $(INSTALL_DIR)"
 
 # ── test ──────────────────────────────────────────────────────────────────────
+# Requires Node.js >= 20.6 for the module loader register() API.
+NODE_MAJOR := $(shell node -e 'process.stdout.write(process.versions.node.split(".")[0])' 2>/dev/null || echo 0)
+NODE_MINOR := $(shell node -e 'process.stdout.write(process.versions.node.split(".")[1])' 2>/dev/null || echo 0)
+
 test: all
+	@if [ "$(NODE_MAJOR)" -lt 20 ] || \
+	    ( [ "$(NODE_MAJOR)" -eq 20 ] && [ "$(NODE_MINOR)" -lt 6 ] ); then \
+	  echo "ERROR: Node.js >= 20.6 required (have $$(node --version 2>/dev/null || echo 'none'))"; \
+	  echo "       Install via nvm: nvm install 20"; \
+	  exit 1; \
+	fi
 	node --import ./test/register.mjs --test test/*.test.mjs
 	@if command -v gjs >/dev/null 2>&1; then \
 	  gjs -m test/gjs-schema.gjs; \
 	else \
 	  echo "gjs not found — skipping schema validation test"; \
 	fi
+
+# ── e2e (container) tests ─────────────────────────────────────────────────────
+test-e2e: zip
+	test/e2e.sh
 
 # ── clean ─────────────────────────────────────────────────────────────────────
 clean:

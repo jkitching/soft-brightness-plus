@@ -1,0 +1,11 @@
+{
+  "name": "soft-brightness-plus",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "scripts": {
+    "test": "node --import ./test/register.mjs --test test/*.test.mjs"
+  }
+}
