@@ -108,7 +108,7 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             this.min_brightness_control.add_suffix(mbBox);
             this.min_brightness_control.set_activatable_widget(mbScale);
             this._settings.bind('min-brightness', mbScale.get_adjustment(), 'value', Gio.SettingsBindFlags.DEFAULT);
-            const mbFmt = (v) => v < 0.005 ? _('Off') : v.toFixed(2);
+            const mbFmt = (v) => v < 0.005 ? _('None') : v.toFixed(2);
             this.mbLabel.set_label(mbFmt(mbScale.get_value()));
             mbScale.connect('value-changed', () => this.mbLabel.set_label(mbFmt(mbScale.get_value())));
             group.add(this.min_brightness_control);
