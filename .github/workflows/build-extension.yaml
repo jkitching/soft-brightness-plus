@@ -19,7 +19,7 @@ jobs:
 
       - name: Build extension
         run: |
-          meson build
+          meson setup build
           ninja -C build extension.zip
 
       - name: Upload artifacts
