@@ -4,16 +4,6 @@
     <value value="1" nick="built-in"/>
     <value value="2" nick="external"/>
   </enum>
-  <enum id="org.gnome.shell.extensions.soft-brightness-plus.dimming-mode">
-    <value value="0" nick="overlay"/>
-    <value value="1" nick="effect"/>
-    <value value="2" nick="shader"/>
-  </enum>
-  <enum id="org.gnome.shell.extensions.soft-brightness-plus.prevent-unredirect">
-    <value value="0" nick="never"/>
-    <value value="1" nick="when-correcting"/>
-    <value value="2" nick="always"/>
-  </enum>
   <schema id="org.gnome.shell.extensions.soft-brightness-plus" path="/org/gnome/shell/extensions/soft-brightness-plus/">
     <key name="use-backlight" type="b">
       <default>false</default>
@@ -30,16 +20,7 @@
       <summary>Builtin monitor.</summary>
       <description>The name of the built-in monitor.</description>
     </key>
-    <key name="prevent-unredirect" enum="org.gnome.shell.extensions.soft-brightness-plus.prevent-unredirect">
-      <default>"when-correcting"</default>
-      <summary>Prevent window unredirecting behavior.</summary>
-      <description>If set to never, unredirection is never
-      prevented. If set to when-correcting, unredirection will be
-      prevented when the brightness is not at the maximum setting (and
-      an alpha layer is lowering the brightness). If set to always,
-      window unredirection will always be prevented when this
-      extension is active, allowing tear-free display.</description>
-    </key>
+
     <key name="min-brightness" type="d">
       <range min="0" max="1"/>
       <default>0.1</default>
@@ -82,19 +63,7 @@
       <summary>Debugging.</summary>
       <description>Enable debugging for the extension.</description>
     </key>
-    <key name="dimming-mode" enum="org.gnome.shell.extensions.soft-brightness-plus.dimming-mode">
-      <default>"overlay"</default>
-      <summary>Dimming mode.</summary>
-      <description>Controls how the brightness reduction is applied.
-      "overlay" (default): a transparent black actor is placed over the
-      screen — same behaviour as the original extension.
-      "effect": applies a Clutter BrightnessContrastEffect to the stage.
-      No overlay actor; near-darks clamp to black.
-      "shader": applies a GLSL gamma-curve OffscreenEffect to the stage.
-      Highlights are compressed faster than darks — white dims more
-      than near-black at the same slider value. See shader-gamma to
-      tune the curve shape.</description>
-    </key>
+
     <key name="shader-gamma" type="d">
       <range min="1.0" max="4.0"/>
       <default>2.0</default>
