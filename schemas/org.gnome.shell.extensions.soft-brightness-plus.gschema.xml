@@ -40,6 +40,14 @@
       more aggressively while preserving dark content — 2.0 is a good
       starting point for eye comfort.</description>
     </key>
+    <key name="per-monitor-gammas" type="ad">
+      <default>[]</default>
+      <summary>Per-monitor gamma overrides.</summary>
+      <description>Array of gamma values indexed by monitor position (0, 1, 2…).
+      When shorter than the number of connected monitors, the global
+      shader-gamma value is used as the fallback for remaining monitors.
+      Edit via the extension preferences page.</description>
+    </key>
     <key name="debug" type="b">
       <default>false</default>
       <summary>Debugging.</summary>

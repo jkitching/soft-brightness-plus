@@ -34,31 +34,62 @@ import * as Logger from './logger.js';
 import * as Utils from './utils.js';
 import { MouseSpriteContent } from './cursor.js';
 
+// Maximum number of monitors the per-monitor shader supports.
+const MAX_MONITORS = 4;
+
 // Gamma-curve GLSL dimming effect.
-// Applied to global.stage as an OffscreenEffect.  Each frame vfunc_paint_target
-// uploads the current brightness and gamma_k uniforms, then runs the fragment
-// shader which maps: out = brightness * (1 - (1 - in)^gamma_k)
-//   gamma_k = 1  →  identical to linear overlay
-//   gamma_k > 1  →  darks preserved better; highlights compress faster
-// The max() guard prevents pow(negative, non-integer) = NaN.
+// Applied to global.stage as an OffscreenEffect.  The fragment shader selects
+// a per-monitor gamma by testing the fragment's UV position against up to
+// MAX_MONITORS monitor rectangles passed as uniforms.  Pixels outside all
+// rectangles (gap between monitors) use the default gamma.
+//
+// Formula per monitor:  out = brightness * (1 - (1 - in)^gamma_k)
+//   gamma_k = 1  →  linear (identical to a plain alpha overlay)
+//   gamma_k > 1  →  darks preserved; highlights compress faster
 const GammaCurveEffect = GObject.registerClass(
     class GammaCurveEffect extends Shell.GLSLEffect {
-        _init(brightness, gammaK) {
+        _init(brightness, globalGammaK, monitorRects, monitorGammas) {
             super._init();
             this._brightnessLoc = this.get_uniform_location('u_brightness');
-            this._gammaKLoc = this.get_uniform_location('u_gamma_k');
+            this._globalGammaKLoc = this.get_uniform_location('u_global_gamma_k');
+            this._monitorCountLoc = this.get_uniform_location('u_monitor_count');
+            // Each monitor rect is 4 floats (x, y, w, h) in UV space [0,1].
+            this._monitorRectsLoc = this.get_uniform_location('u_monitor_rects');
+            this._monitorGammasLoc = this.get_uniform_location('u_monitor_gammas');
+
             this._brightness = brightness;
-            this._gammaK = gammaK;
+            this._globalGammaK = globalGammaK;
+            this._monitorRects = monitorRects;   // Float32Array, 4*MAX_MONITORS floats
+            this._monitorGammas = monitorGammas; // Float32Array, MAX_MONITORS floats
+            this._monitorCount = monitorGammas.length;
         }
 
         vfunc_build_pipeline() {
             const declarations = `
                 uniform float u_brightness;
-                uniform float u_gamma_k;
+                uniform float u_global_gamma_k;
+                uniform float u_monitor_count;
+                uniform vec4  u_monitor_rects[${MAX_MONITORS}];
+                uniform float u_monitor_gammas[${MAX_MONITORS}];
             `;
+            // Loop unrolled-style: iterate up to MAX_MONITORS, skip past u_monitor_count.
+            // Uses a flag so we stop at the first matching monitor.
             const src = `
+                vec2 uv = cogl_tex_coord_in[0].st;
+                float gamma_k = u_global_gamma_k;
+                bool found = false;
+                for (int i = 0; i < ${MAX_MONITORS}; i++) {
+                    if (!found && float(i) < u_monitor_count) {
+                        vec4 r = u_monitor_rects[i];
+                        if (uv.x >= r.x && uv.x < r.x + r.z &&
+                            uv.y >= r.y && uv.y < r.y + r.w) {
+                            gamma_k = u_monitor_gammas[i];
+                            found = true;
+                        }
+                    }
+                }
                 vec3 c = clamp(cogl_color_in.rgb, 0.0, 1.0);
-                c = u_brightness * (1.0 - pow(1.0 - c, vec3(u_gamma_k)));
+                c = u_brightness * (1.0 - pow(1.0 - c, vec3(gamma_k)));
                 cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_in.a);
             `;
             this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, declarations, src, false);
@@ -66,13 +97,19 @@ const GammaCurveEffect = GObject.registerClass(
 
         vfunc_paint_target(...args) {
             this.set_uniform_float(this._brightnessLoc, 1, [this._brightness]);
-            this.set_uniform_float(this._gammaKLoc, 1, [this._gammaK]);
+            this.set_uniform_float(this._globalGammaKLoc, 1, [this._globalGammaK]);
+            this.set_uniform_float(this._monitorCountLoc, 1, [this._monitorCount]);
+            this.set_uniform_float(this._monitorRectsLoc, 4, Array.from(this._monitorRects));
+            this.set_uniform_float(this._monitorGammasLoc, 1, Array.from(this._monitorGammas));
             super.vfunc_paint_target(...args);
         }
 
-        update(brightness, gammaK) {
+        update(brightness, globalGammaK, monitorRects, monitorGammas) {
             this._brightness = brightness;
-            this._gammaK = gammaK;
+            this._globalGammaK = globalGammaK;
+            this._monitorRects = monitorRects;
+            this._monitorGammas = monitorGammas;
+            this._monitorCount = monitorGammas.length;
             this.queue_repaint();
         }
     }
@@ -179,6 +216,7 @@ export default class SoftBrightnessExtension extends Extension {
             'changed::current-brightness': () => this._on_brightness_change(),
             'changed::use-backlight': () => this._on_brightness_change(),
             'changed::shader-gamma': () => this._on_brightness_change(),
+            'changed::per-monitor-gammas': () => this._on_brightness_change(),
             'changed::debug': () => this._on_debug_change(),
         }
         this._removeSettingsCallbacks = Object.entries(callbacks).map(
@@ -941,14 +979,45 @@ class OverlayManager {
         this._showShaderEffect(brightness);
     }
 
+    _buildMonitorData() {
+        const monitors = Main.layoutManager.monitors;
+        const count = Math.min(monitors.length, MAX_MONITORS);
+        const sw = global.screen_width;
+        const sh = global.screen_height;
+
+        const perMonitorGammas = this._settings.get_value('per-monitor-gammas').deepUnpack();
+        const defaultGammaK = this._settings.get_double('shader-gamma');
+
+        const rects = new Float32Array(MAX_MONITORS * 4);
+        const gammas = new Float32Array(MAX_MONITORS);
+
+        for (let i = 0; i < MAX_MONITORS; i++) {
+            if (i < count) {
+                const m = monitors[i];
+                rects[i * 4 + 0] = m.x / sw;
+                rects[i * 4 + 1] = m.y / sh;
+                rects[i * 4 + 2] = m.width / sw;
+                rects[i * 4 + 3] = m.height / sh;
+                gammas[i] = (i < perMonitorGammas.length) ? perMonitorGammas[i] : defaultGammaK;
+            } else {
+                rects[i * 4 + 0] = 0; rects[i * 4 + 1] = 0;
+                rects[i * 4 + 2] = 0; rects[i * 4 + 3] = 0;
+                gammas[i] = defaultGammaK;
+            }
+        }
+
+        return { count, rects, gammas, defaultGammaK };
+    }
+
     _showShaderEffect(brightness) {
-        const gammaK = this._settings.get_double('shader-gamma');
+        const { count, rects, gammas, defaultGammaK } = this._buildMonitorData();
         if (!this._shaderEffect) {
-            this._logger.log_debug('_showShaderEffect(): creating GammaCurveEffect on stage (gamma=' + gammaK + ')');
-            this._shaderEffect = new GammaCurveEffect(brightness, gammaK);
+            this._logger.log_debug('_showShaderEffect(): creating GammaCurveEffect on stage (' +
+                count + ' monitors, global gamma=' + defaultGammaK + ')');
+            this._shaderEffect = new GammaCurveEffect(brightness, defaultGammaK, rects, gammas);
             global.stage.add_effect_with_name('soft-brightness-plus-shader', this._shaderEffect);
         } else {
-            this._shaderEffect.update(brightness, gammaK);
+            this._shaderEffect.update(brightness, defaultGammaK, rects, gammas);
         }
         this._shaderEffect.enabled = true;
     }

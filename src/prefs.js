@@ -16,6 +16,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import Adw from 'gi://Adw';
+import Gdk from 'gi://Gdk';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
@@ -123,6 +125,53 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             group.add(this.shader_gamma_control);
 
             this.add(group);
+        }
+
+        {
+            const display = Gdk.Display.get_default();
+            const monitors = display ? display.get_monitors() : null;
+            const monitorCount = monitors ? monitors.get_n_items() : 0;
+
+            if (monitorCount > 1) {
+                const group = new Adw.PreferencesGroup({
+                    title: _('Per-monitor white compression'),
+                    description: _('Override the white compression strength for individual monitors. Leave at 1.0 to use the global setting above.'),
+                });
+
+                for (let i = 0; i < monitorCount; i++) {
+                    const mon = monitors.get_item(i);
+                    const connector = mon.get_connector ? mon.get_connector() : null;
+                    const geo = mon.get_geometry();
+                    const label = connector
+                        ? `${connector} (${geo.width}×${geo.height})`
+                        : `Monitor ${i + 1} (${geo.width}×${geo.height})`;
+
+                    const row = new Adw.SpinRow({
+                        title: label,
+                        digits: 2,
+                        adjustment: new Gtk.Adjustment({
+                            lower: 1.0,
+                            upper: 4.0,
+                            step_increment: 0.1,
+                        }),
+                    });
+
+                    const perMonitorGammas = this._settings.get_value('per-monitor-gammas').deepUnpack();
+                    row.value = (i < perMonitorGammas.length) ? perMonitorGammas[i] : 1.0;
+
+                    row.connect('notify::value', () => {
+                        const vals = this._settings.get_value('per-monitor-gammas').deepUnpack();
+                        while (vals.length <= i) vals.push(1.0);
+                        vals[i] = row.value;
+                        this._settings.set_value('per-monitor-gammas',
+                            new GLib.Variant('ad', vals));
+                    });
+
+                    group.add(row);
+                }
+
+                this.add(group);
+            }
         }
 
         {
