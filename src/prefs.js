@@ -218,6 +218,18 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
         }
 
         {
+            const group = new Adw.PreferencesGroup({
+                title: _('Keyboard shortcuts'),
+                description: _('Default shortcuts use Shift + hardware brightness keys. Clear to disable; use gsettings to set a custom binding.'),
+            });
+
+            group.add(this._buildShortcutRow(_('Increase brightness'), 'brightness-up'));
+            group.add(this._buildShortcutRow(_('Decrease brightness'), 'brightness-down'));
+
+            this.add(group);
+        }
+
+        {
             const group = new Adw.PreferencesGroup();
 
             const copyright1 = new Gtk.Label({
@@ -248,6 +260,41 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
 
     _getDescription(name) {
         return _(this._settings.settings_schema.get_key(name).get_description());
+    }
+
+    _buildShortcutRow(title, settingKey) {
+        const row = new Adw.ActionRow({ title });
+
+        const shortcutLabel = new Gtk.ShortcutLabel({
+            disabled_text: _('Disabled'),
+            valign: Gtk.Align.CENTER,
+        });
+
+        const refresh = () => {
+            const vals = this._settings.get_strv(settingKey);
+            shortcutLabel.accelerator = vals.length ? vals[0] : '';
+        };
+        refresh();
+        this._settings.connect(`changed::${settingKey}`, refresh);
+
+        const clearButton = new Gtk.Button({
+            label: _('Clear'),
+            valign: Gtk.Align.CENTER,
+        });
+        clearButton.add_css_class('flat');
+        clearButton.connect('clicked', () => this._settings.set_strv(settingKey, []));
+
+        const resetButton = new Gtk.Button({
+            label: _('Reset'),
+            valign: Gtk.Align.CENTER,
+        });
+        resetButton.add_css_class('flat');
+        resetButton.connect('clicked', () => this._settings.reset(settingKey));
+
+        row.add_suffix(shortcutLabel);
+        row.add_suffix(clearButton);
+        row.add_suffix(resetButton);
+        return row;
     }
 
     _bindBuiltinMonitorControl() {
