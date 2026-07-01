@@ -40,25 +40,50 @@ import { MouseSpriteContent } from './cursor.js';
 // shader which maps: out = brightness * (1 - (1 - in)^gamma_k)
 //   gamma_k = 1  →  identical to linear overlay
 //   gamma_k > 1  →  darks preserved better; highlights compress faster
-// The max() guard prevents pow(negative, non-integer) = NaN.
+//
+// monitorRects: array of {x, y, w, h} in UV [0,1] space for the stage.
+//   Empty array (length 0) → dim the entire stage (monitors=all).
+//   Non-empty → only dim pixels that fall inside one of the listed rects.
+const MAX_SHADER_MONITORS = 4;
+
 const GammaCurveEffect = GObject.registerClass(
     class GammaCurveEffect extends Shell.GLSLEffect {
-        _init(brightness, gammaK) {
+        _init(brightness, gammaK, monitorRects) {
             super._init();
             this._brightnessLoc = this.get_uniform_location('u_brightness');
             this._gammaKLoc = this.get_uniform_location('u_gamma_k');
+            this._monitorCountLoc = this.get_uniform_location('u_monitor_count');
+            this._monitorRectsLoc = this.get_uniform_location('u_monitor_rects');
             this._brightness = brightness;
             this._gammaK = gammaK;
+            this._monitorRects = monitorRects || [];
         }
 
         vfunc_build_pipeline() {
             const declarations = `
                 uniform float u_brightness;
                 uniform float u_gamma_k;
+                uniform float u_monitor_count;
+                uniform vec4  u_monitor_rects[${MAX_SHADER_MONITORS}];
             `;
             const src = `
                 vec3 c = clamp(cogl_color_in.rgb, 0.0, 1.0);
-                c = u_brightness * (1.0 - pow(1.0 - c, vec3(u_gamma_k)));
+                bool dim = u_monitor_count < 0.5;
+                if (!dim) {
+                    vec2 uv = cogl_tex_coord_in[0].st;
+                    for (int i = 0; i < ${MAX_SHADER_MONITORS}; i++) {
+                        if (float(i) >= u_monitor_count) break;
+                        vec4 r = u_monitor_rects[i];
+                        if (uv.x >= r.x && uv.x < r.x + r.z &&
+                            uv.y >= r.y && uv.y < r.y + r.w) {
+                            dim = true;
+                            break;
+                        }
+                    }
+                }
+                if (dim) {
+                    c = u_brightness * (1.0 - pow(1.0 - c, vec3(u_gamma_k)));
+                }
                 cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_in.a);
             `;
             this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, declarations, src, false);
@@ -67,12 +92,21 @@ const GammaCurveEffect = GObject.registerClass(
         vfunc_paint_target(...args) {
             this.set_uniform_float(this._brightnessLoc, 1, [this._brightness]);
             this.set_uniform_float(this._gammaKLoc, 1, [this._gammaK]);
+            const count = Math.min(this._monitorRects.length, MAX_SHADER_MONITORS);
+            this.set_uniform_float(this._monitorCountLoc, 1, [count]);
+            const flat = [];
+            for (let i = 0; i < MAX_SHADER_MONITORS; i++) {
+                const r = i < count ? this._monitorRects[i] : {x: 0, y: 0, w: 0, h: 0};
+                flat.push(r.x, r.y, r.w, r.h);
+            }
+            this.set_uniform_float(this._monitorRectsLoc, 4, flat);
             super.vfunc_paint_target(...args);
         }
 
-        update(brightness, gammaK) {
+        update(brightness, gammaK, monitorRects) {
             this._brightness = brightness;
             this._gammaK = gammaK;
+            this._monitorRects = monitorRects;
             this.queue_repaint();
         }
     }
@@ -1111,14 +1145,37 @@ class OverlayManager {
 
     _showShaderEffect(brightness) {
         const gammaK = this._settings.get_double('shader-gamma');
+        const monitorRects = this._getShaderMonitorRects();
         if (!this._shaderEffect) {
-            this._logger.log_debug('_showShaderEffect(): creating GammaCurveEffect on stage (gamma=' + gammaK + ')');
-            this._shaderEffect = new GammaCurveEffect(brightness, gammaK);
+            this._logger.log_debug('_showShaderEffect(): creating GammaCurveEffect on stage (gamma=' + gammaK + ', monitor_rects=' + monitorRects.length + ')');
+            this._shaderEffect = new GammaCurveEffect(brightness, gammaK, monitorRects);
             global.stage.add_effect_with_name('soft-brightness-plus-shader', this._shaderEffect);
         } else {
-            this._shaderEffect.update(brightness, gammaK);
+            this._shaderEffect.update(brightness, gammaK, monitorRects);
         }
         this._shaderEffect.enabled = true;
+    }
+
+    // Compute UV-space rects for the monitors that should be dimmed.
+    // Returns [] when monitors=all (the shader dims the entire stage).
+    // Returns an array of {x,y,w,h} in [0,1] UV coordinates otherwise.
+    _getShaderMonitorRects() {
+        const enabledMonitors = this._settings.get_string('monitors');
+        if (enabledMonitors === 'all') return [];
+
+        const monitors = this._monitorManager.getMonitors();
+        if (!monitors || monitors.length === 0) return [];
+
+        const sw = global.stage.width;
+        const sh = global.stage.height;
+        if (!sw || !sh) return [];
+
+        return monitors.map(m => ({
+            x: m.x / sw,
+            y: m.y / sh,
+            w: m.width / sw,
+            h: m.height / sh,
+        }));
     }
 
     _hideShaderEffect() {
