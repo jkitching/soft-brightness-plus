@@ -15,12 +15,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build
+          sudo apt-get install -y gettext libglib2.0-bin
 
       - name: Build extension
         run: |
-          meson setup build
-          ninja -C build extension.zip
+          make zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
