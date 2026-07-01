@@ -10,13 +10,15 @@ ZIP_NAME    := $(UUID).v$(VERSION).shell-extension.zip
 JS_SOURCES := src/cursor.js src/extension.js src/logger.js src/prefs.js src/utils.js
 SCHEMA_XML := schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 DBUS_XML   := dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml
+LINGUAS    := $(shell cat po/LINGUAS)
+MO_FILES   := $(addprefix $(BUILD_DIR)/locale/,$(addsuffix /LC_MESSAGES/$(DOMAIN).mo,$(LINGUAS)))
 
 # Derive VCS tag from git (falls back to "unknown")
 VCS_TAG := $(shell git describe --tags --long --always 2>/dev/null || echo unknown)
 
 .PHONY: all zip dist install clean
 
-all: $(BUILD_DIR)/metadata.json $(BUILD_DIR)/schemas/gschemas.compiled
+all: $(BUILD_DIR)/metadata.json $(BUILD_DIR)/schemas/gschemas.compiled $(MO_FILES)
 
 # ── metadata.json ─────────────────────────────────────────────────────────────
 $(BUILD_DIR)/metadata.json: src/metadata.json.in
@@ -32,6 +34,11 @@ $(BUILD_DIR)/schemas/gschemas.compiled: $(SCHEMA_XML)
 	cp $(SCHEMA_XML) $(BUILD_DIR)/schemas/
 	glib-compile-schemas $(BUILD_DIR)/schemas/
 
+# ── translations ──────────────────────────────────────────────────────────────
+$(BUILD_DIR)/locale/%/LC_MESSAGES/$(DOMAIN).mo: po/%.po
+	@mkdir -p $(dir $@)
+	msgfmt $< -o $@
+
 # ── extension zip ─────────────────────────────────────────────────────────────
 zip dist: all
 	@rm -f $(ZIP_NAME)
@@ -40,6 +47,7 @@ zip dist: all
 	  mkdir -p $$TMPDIR/schemas $$TMPDIR/dbus-interfaces && \
 	  cp $(BUILD_DIR)/schemas/gschemas.compiled $(SCHEMA_XML) $$TMPDIR/schemas/ && \
 	  cp $(DBUS_XML) $$TMPDIR/dbus-interfaces/ && \
+	  cp -r $(BUILD_DIR)/locale $$TMPDIR/ && \
 	  (cd $$TMPDIR && zip -r $(CURDIR)/$(ZIP_NAME) .) && \
 	  rm -rf $$TMPDIR
 	@cp $(ZIP_NAME) $(BUILD_DIR)/extension.zip
@@ -51,6 +59,7 @@ install: all
 	cp $(JS_SOURCES) $(BUILD_DIR)/metadata.json $(INSTALL_DIR)/
 	cp $(BUILD_DIR)/schemas/gschemas.compiled $(SCHEMA_XML) $(INSTALL_DIR)/schemas/
 	cp $(DBUS_XML) $(INSTALL_DIR)/dbus-interfaces/
+	cp -r $(BUILD_DIR)/locale $(INSTALL_DIR)/
 	@echo "Installed to $(INSTALL_DIR)"
 
 # ── clean ─────────────────────────────────────────────────────────────────────
