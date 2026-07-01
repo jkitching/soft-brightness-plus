@@ -22,6 +22,7 @@ RUN useradd -ms /bin/bash tester && \
     chmod 1777 /tmp/.X11-unix
 
 COPY run-test.sh /run-test.sh
+COPY fake-logind.js /fake-logind.js
 RUN chmod +x /run-test.sh
 
 USER tester

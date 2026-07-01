@@ -43,6 +43,19 @@ MODE="$1"; UUID="$2"; LOG="$3"; SETTLE="$4"
 # Enable the extension before gnome-shell reads settings
 gsettings set org.gnome.shell enabled-extensions "['${UUID}']"
 
+# Start a fake system D-Bus and register a logind stub on it.
+# gnome-shell connects to org.freedesktop.login1 on the system bus during
+# background init. Without this, it throws an uncaught exception that
+# causes a C-level heap abort in the GNOME Shell 46 error path.
+FAKE_SYSTEM_BUS=/tmp/fake-system-dbus.sock
+dbus-daemon --session \
+    --address="unix:path=${FAKE_SYSTEM_BUS}" \
+    --print-pid --fork >/dev/null
+export DBUS_SYSTEM_BUS_ADDRESS="unix:path=${FAKE_SYSTEM_BUS}"
+gjs /fake-logind.js &
+LOGIND_PID=$!
+sleep 1
+
 if [ "${MODE}" = "x11" ]; then
     DISPLAY=:99 \
     XDG_SESSION_TYPE=x11 \
@@ -88,5 +101,6 @@ fi
 
 kill "${GS_PID}" 2>/dev/null || true
 wait "${GS_PID}" 2>/dev/null || true
+kill "${LOGIND_PID}" 2>/dev/null || true
 echo "  PASS: ${MODE} test complete"
 INNER
