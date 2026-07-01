@@ -45,10 +45,12 @@ gsettings set org.gnome.shell enabled-extensions "['${UUID}']"
 
 if [ "${MODE}" = "x11" ]; then
     DISPLAY=:99 \
+    XDG_SESSION_TYPE=x11 \
     LIBGL_ALWAYS_SOFTWARE=1 \
     MUTTER_DISABLE_ANIMATIONS=1 \
         gnome-shell >"${LOG}" 2>&1 &
 else
+    XDG_SESSION_TYPE=wayland \
     MUTTER_DEBUG_DUMMY_MODE_SPECS="1920x1080" \
     MUTTER_DISABLE_ANIMATIONS=1 \
         gnome-shell --headless >"${LOG}" 2>&1 &
