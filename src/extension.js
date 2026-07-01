@@ -143,6 +143,7 @@ export default class SoftBrightnessExtension extends Extension {
         );
 
         this._enableSettingsMonitoring();
+        this._enableKeyboardShortcuts();
 
         this._logger.log_debug('Extension enabled');
     }
@@ -153,6 +154,8 @@ export default class SoftBrightnessExtension extends Extension {
         // metadata.json.  The extension will remain active while the lock screen
         // is shown.
         this._logger.log_debug('disable(), session mode = ' + Main.sessionMode.currentMode);
+
+        this._disableKeyboardShortcuts();
 
         if (this._workspaceSwitchId) {
             global.workspace_manager.disconnect(this._workspaceSwitchId);
@@ -182,6 +185,33 @@ export default class SoftBrightnessExtension extends Extension {
     _on_debug_change() {
         this._logger.set_debug(this._settings.get_boolean('debug'));
         this._logger.log('debug = ' + this._logger.get_debug());
+    }
+
+    _enableKeyboardShortcuts() {
+        const step = 0.05;
+        Main.wm.addKeybinding('brightness-up', this._settings,
+            Meta.KeyBindingFlags.NONE,
+            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+            () => this._adjustBrightness(+step));
+        Main.wm.addKeybinding('brightness-down', this._settings,
+            Meta.KeyBindingFlags.NONE,
+            Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+            () => this._adjustBrightness(-step));
+    }
+
+    _disableKeyboardShortcuts() {
+        Main.wm.removeKeybinding('brightness-up');
+        Main.wm.removeKeybinding('brightness-down');
+    }
+
+    _adjustBrightness(delta) {
+        const minBrightness = this._settings.get_double('min-brightness');
+        const current = this._getBrightnessLevel();
+        // Round to nearest step to avoid floating-point drift
+        const stepped = Math.round((current + delta) / 0.05) * 0.05;
+        const clamped = Math.max(minBrightness, Math.min(1.0, stepped));
+        this._logger.log_debug(`_adjustBrightness(${delta}): ${current} -> ${clamped}`);
+        this._storeBrightnessLevel(clamped);
     }
 
     _onWorkspaceChanged() {

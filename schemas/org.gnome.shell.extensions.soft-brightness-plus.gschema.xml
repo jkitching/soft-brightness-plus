@@ -65,6 +65,18 @@
       or there may be multiple cursors shown on the screen.
       </description>
     </key>
+    <key name="brightness-up" type="as">
+      <default>['&lt;Shift&gt;XF86MonBrightnessUp']</default>
+      <summary>Keyboard shortcut: increase brightness.</summary>
+      <description>Keyboard shortcut to increase the overlay brightness by one step (5%).
+      Set to an empty list to disable.</description>
+    </key>
+    <key name="brightness-down" type="as">
+      <default>['&lt;Shift&gt;XF86MonBrightnessDown']</default>
+      <summary>Keyboard shortcut: decrease brightness.</summary>
+      <description>Keyboard shortcut to decrease the overlay brightness by one step (5%).
+      Set to an empty list to disable.</description>
+    </key>
     <key name="debug" type="b">
       <default>false</default>
       <summary>Debugging.</summary>
