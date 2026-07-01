@@ -32,12 +32,13 @@
     </key>
     <key name="shader-gamma" type="d">
       <range min="1.0" max="4.0"/>
-      <default>2.0</default>
-      <summary>Gamma exponent for the GLSL dimming curve.</summary>
-      <description>Controls the gamma curve applied when dimming.
-      1.0 gives a linear result (whites and darks dim equally). Values
-      above 1.0 preserve dark content better while compressing highlights
-      more aggressively — 2.0 is the recommended starting point.</description>
+      <default>1.0</default>
+      <summary>White compression strength.</summary>
+      <description>Reshapes the brightness curve so whites are less
+      harsh without uniformly darkening the screen. 1.0 = off (linear,
+      whites and darks scale equally). Higher values compress highlights
+      more aggressively while preserving dark content — 2.0 is a good
+      starting point for eye comfort.</description>
     </key>
     <key name="debug" type="b">
       <default>false</default>

@@ -74,24 +74,21 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
         }
 
         {
-            const group = new Adw.PreferencesGroup();
+            const group = new Adw.PreferencesGroup({
+                title: _('Brightness'),
+                description: _('Controls overall screen dimming. Use the hardware backlight when available, or let the extension control it independently.'),
+            });
 
             this.enabled_control = new Adw.SwitchRow({
-                title: _('Control overlay brightness independently'),
-                subtitle: _('Show a separate slider in the quick settings menu.'),
+                title: _('Use hardware backlight'),
+                subtitle: _('When on, the brightness slider adjusts the hardware backlight. When off, the extension dims via the GPU shader.'),
             });
-            // Inverted binding: when switch is ON, use-backlight is false
-            this._settings.bind('use-backlight', this.enabled_control, 'active', Gio.SettingsBindFlags.INVERT_BOOLEAN);
+            // Inverted binding: when switch is ON, use-backlight is true
+            this._settings.bind('use-backlight', this.enabled_control, 'active', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.enabled_control);
 
-            this.add(group);
-        }
-
-        {
-            const group = new Adw.PreferencesGroup();
-
             this.min_brightness_control = new Adw.SpinRow({
-                title: _('Minimum brightness (0..1):'),
+                title: _('Minimum brightness:'),
                 subtitle: this._getDescription('min-brightness'),
                 digits: 2,
                 adjustment: new Gtk.Adjustment({
@@ -103,8 +100,17 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             this._settings.bind('min-brightness', this.min_brightness_control, 'value', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.min_brightness_control);
 
+            this.add(group);
+        }
+
+        {
+            const group = new Adw.PreferencesGroup({
+                title: _('White compression'),
+                description: _('Reshapes the brightness curve so whites are less harsh without darkening the whole screen. Applied on top of the brightness setting.'),
+            });
+
             this.shader_gamma_control = new Adw.SpinRow({
-                title: _('Gamma (1..4):'),
+                title: _('Strength (1.0 = off, 4.0 = maximum):'),
                 subtitle: this._getDescription('shader-gamma'),
                 digits: 2,
                 adjustment: new Gtk.Adjustment({
@@ -116,15 +122,23 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             this._settings.bind('shader-gamma', this.shader_gamma_control, 'value', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.shader_gamma_control);
 
+            this.add(group);
+        }
+
+        {
+            const group = new Adw.PreferencesGroup({
+                title: _('Advanced'),
+            });
+
             this.clone_mouse_control = new Adw.SwitchRow({
-                title: _('Mouse cursor brightness control:'),
+                title: _('Apply to mouse cursor:'),
                 subtitle: this._getDescription('clone-mouse'),
             });
             this._settings.bind('clone-mouse', this.clone_mouse_control, 'active', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.clone_mouse_control);
 
             this.debug_control = new Adw.SwitchRow({
-                title: _('Debug:'),
+                title: _('Debug logging:'),
                 subtitle: this._getDescription('debug'),
             });
             this._settings.bind('debug', this.debug_control, 'active', Gio.SettingsBindFlags.DEFAULT);

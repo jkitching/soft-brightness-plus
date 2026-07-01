@@ -196,22 +196,33 @@ export default class SoftBrightnessExtension extends Extension {
     }
 
     _on_brightness_change() {
+        const useBacklight = this._settings.get_boolean('use-backlight');
+        const gammaK = this._settings.get_double('shader-gamma');
         let curBrightness = this._getBrightnessLevel();
         const minBrightness = this._settings.get_double('min-brightness');
 
-        this._logger.log_debug('_on_brightness_change: current-brightness=' + curBrightness + ', min-brightness=' + minBrightness);
-        if (curBrightness < minBrightness) {
+        this._logger.log_debug('_on_brightness_change: current-brightness=' + curBrightness +
+            ', min-brightness=' + minBrightness + ', use-backlight=' + useBacklight + ', gamma=' + gammaK);
+
+        // Enforce minimum brightness floor only in shader-controlled mode.
+        if (!useBacklight && curBrightness < minBrightness) {
             curBrightness = minBrightness;
             this._storeBrightnessLevel(minBrightness);
             return;
         }
-        if (curBrightness >= 1) {
+
+        // In backlight mode the hardware controls overall brightness; the shader
+        // gets brightness=1.0 so it only applies the gamma curve, not dimming.
+        const shaderBrightness = useBacklight ? 1.0 : curBrightness;
+        const shaderNeeded = gammaK > 1.0 || shaderBrightness < 1.0;
+
+        if (shaderNeeded) {
+            this._overlayManager.showOverlays(shaderBrightness);
+            // Cursor cloning only makes sense when the shader is actually dimming.
+            this._cursorManager.setActive(!useBacklight && this._overlayManager.initialized());
+        } else {
             this._overlayManager.hideOverlays();
             this._cursorManager.setActive(false);
-        } else {
-            this._overlayManager.showOverlays(curBrightness);
-            // Only activate cursor if overlays were successfully created
-            this._cursorManager.setActive(this._overlayManager.initialized());
         }
     }
 
