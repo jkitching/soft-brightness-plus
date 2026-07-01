@@ -112,7 +112,7 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
 
             this.shader_gamma_control = new Adw.SpinRow({
                 title: _('Strength:'),
-                subtitle: this._getDescription('shader-gamma'),
+                subtitle: _('1.0 = off. Higher values compress bright highlights more aggressively. 2.0 is a good starting point.'),
                 digits: 2,
                 adjustment: new Gtk.Adjustment({
                     lower: 1.0,
