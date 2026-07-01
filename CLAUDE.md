@@ -4,15 +4,14 @@
 
 **For creating a release package:**
 ```bash
-rm build/extension.zip
-ninja -C build extension.zip
+make zip
 mv build/extension.zip soft-brightness-plus@joelkitching.com.vXX.shell-extension.zip
 ```
 (Replace `XX` with the appropriate version number)
 
 **For local testing:**
 ```bash
-ninja -C build install
+make install
 ```
 Then restart GNOME Shell (Alt+F2, `r` on X11; logout/login on Wayland)
 
@@ -44,9 +43,8 @@ When releasing a new version, create a **separate commit** after all feature com
 
 **Files to update:**
 
-1. **meson-gse.build** - Update version number (~line 20)
-2. **meson.build** - Update version number (~line 39)
-3. **README.md** - Add changelog entry and update download links (~line 215 for download link, top of Changelog section)
+1. **Makefile** - Update `VERSION` number (line 1)
+2. **README.md** - Add changelog entry and update download links (~line 215 for download link, top of Changelog section)
 
 See commit `8218c77` for an example.
 

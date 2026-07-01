@@ -229,21 +229,15 @@ gnome-extensions install --force soft-brightness-plus@joelkitching.com.v47.shell
 
 ## Building from source
 
-### Requirements
-
-- [meson](http://mesonbuild.com/) v0.50.0 or later.
-
 ### Running the build
 
 - Check out: `git clone https://github.com/jkitching/soft-brightness-plus`
 
 - `cd soft-brightness-plus`
 
-- Run meson: `meson build`
+- To install in your gnome shell extensions' directory (`~/.local/share/gnome-shell/extensions`): `make install`
 
-- To install in your your gnome shell extensions' directory (~/.local/share/gnome-shell/extensions), run ninja: `ninja -C build install`
-
-- To build the extension zip files, run: `ninja -C build extension.zip`, the extension will be found under `build/extension.zip`.
+- To build the extension zip: `make zip` — the extension will be found under `build/extension.zip`.
 
 ## Changelog
 
