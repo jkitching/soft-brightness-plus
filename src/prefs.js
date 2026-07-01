@@ -122,69 +122,6 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
         }
 
         {
-            const group = new Adw.PreferencesGroup({
-                title: _('Full-screen behavior:'),
-                description: this._getDescription('prevent-unredirect'),
-            });
-            const selected = this._settings.get_enum('prevent-unredirect');
-
-            let row;
-
-            row = new Adw.ActionRow({
-                title: _('Do not enforce brightness in full-screen'),
-            });
-            const option0 = new Gtk.CheckButton();
-            if (selected == 0) {
-                option0.set_active(true);
-            }
-            row.add_prefix(option0);
-            row.set_activatable_widget(option0);
-            group.add(row);
-
-            row = new Adw.ActionRow({
-                title: _('Brightness enforced in full-screen'),
-            });
-            const option1 = new Gtk.CheckButton();
-            if (selected == 1) {
-                option1.set_active(true);
-            }
-            option1.set_group(option0);
-            row.add_prefix(option1);
-            row.set_activatable_widget(option1);
-            group.add(row);
-
-            row = new Adw.ActionRow({
-                title: _('Brightness enforced in full-screen, always tear-free'),
-            });
-            const option2 = new Gtk.CheckButton();
-            if (selected == 2) {
-                option2.set_active(true);
-            }
-            option2.set_group(option0);
-            row.add_prefix(option2);
-            row.set_activatable_widget(option2);
-            group.add(row);
-
-            option0.connect('toggled', () => this._settings.set_enum('prevent-unredirect', 0));
-            option1.connect('toggled', () => this._settings.set_enum('prevent-unredirect', 1));
-            option2.connect('toggled', () => this._settings.set_enum('prevent-unredirect', 2));
-            this._settings.connect('changed::prevent-unredirect', () => {
-                if (this.processing_prevent_unredirect) {
-                    return;
-                }
-                this.processing_prevent_unredirect = true;
-                const selected = this._settings.get_enum('prevent-unredirect');
-                const options = [option0, option1, option2];
-                const cur = options.splice(selected, 1)[0];
-                cur.set_active(true);
-                options.forEach((option) => option.set_active(false));
-                this.processing_prevent_unredirect = false;
-            });
-
-            this.add(group);
-        }
-
-        {
             const group = new Adw.PreferencesGroup();
 
             this.min_brightness_control = new Adw.SpinRow({

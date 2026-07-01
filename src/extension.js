@@ -34,31 +34,54 @@ import * as Logger from './logger.js';
 import * as Utils from './utils.js';
 import { MouseSpriteContent } from './cursor.js';
 
-// Gamma-curve GLSL dimming effect.
-// Applied to global.stage as an OffscreenEffect.  Each frame vfunc_paint_target
-// uploads the current brightness and gamma_k uniforms, then runs the fragment
-// shader which maps: out = brightness * (1 - (1 - in)^gamma_k)
+// Gamma-curve GLSL dimming effect applied to global.stage.
+// Maps: out = brightness * (1 - (1 - in)^gamma_k)
 //   gamma_k = 1  →  identical to linear overlay
 //   gamma_k > 1  →  darks preserved better; highlights compress faster
-// The max() guard prevents pow(negative, non-integer) = NaN.
+//
+// monitorRects: [{x,y,w,h}] in UV [0,1] stage space.
+//   Empty (length 0) → dim the entire stage.
+//   Non-empty → only dim pixels inside those rects (for built-in/external targeting).
+const MAX_SHADER_MONITORS = 4;
+
 const GammaCurveEffect = GObject.registerClass(
     class GammaCurveEffect extends Shell.GLSLEffect {
-        _init(brightness, gammaK) {
+        _init(brightness, gammaK, monitorRects) {
             super._init();
             this._brightnessLoc = this.get_uniform_location('u_brightness');
             this._gammaKLoc = this.get_uniform_location('u_gamma_k');
+            this._monitorCountLoc = this.get_uniform_location('u_monitor_count');
+            this._monitorRectsLoc = this.get_uniform_location('u_monitor_rects');
             this._brightness = brightness;
             this._gammaK = gammaK;
+            this._monitorRects = monitorRects || [];
         }
 
         vfunc_build_pipeline() {
             const declarations = `
                 uniform float u_brightness;
                 uniform float u_gamma_k;
+                uniform float u_monitor_count;
+                uniform vec4  u_monitor_rects[${MAX_SHADER_MONITORS}];
             `;
             const src = `
                 vec3 c = clamp(cogl_color_in.rgb, 0.0, 1.0);
-                c = u_brightness * (1.0 - pow(1.0 - c, vec3(u_gamma_k)));
+                bool dim = u_monitor_count < 0.5;
+                if (!dim) {
+                    vec2 uv = cogl_tex_coord_in[0].st;
+                    for (int i = 0; i < ${MAX_SHADER_MONITORS}; i++) {
+                        if (float(i) >= u_monitor_count) break;
+                        vec4 r = u_monitor_rects[i];
+                        if (uv.x >= r.x && uv.x < r.x + r.z &&
+                            uv.y >= r.y && uv.y < r.y + r.w) {
+                            dim = true;
+                            break;
+                        }
+                    }
+                }
+                if (dim) {
+                    c = u_brightness * (1.0 - pow(1.0 - c, vec3(u_gamma_k)));
+                }
                 cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_in.a);
             `;
             this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, declarations, src, false);
@@ -67,12 +90,21 @@ const GammaCurveEffect = GObject.registerClass(
         vfunc_paint_target(...args) {
             this.set_uniform_float(this._brightnessLoc, 1, [this._brightness]);
             this.set_uniform_float(this._gammaKLoc, 1, [this._gammaK]);
+            const count = Math.min(this._monitorRects.length, MAX_SHADER_MONITORS);
+            this.set_uniform_float(this._monitorCountLoc, 1, [count]);
+            const flat = [];
+            for (let i = 0; i < MAX_SHADER_MONITORS; i++) {
+                const r = i < count ? this._monitorRects[i] : {x: 0, y: 0, w: 0, h: 0};
+                flat.push(r.x, r.y, r.w, r.h);
+            }
+            this.set_uniform_float(this._monitorRectsLoc, 4, flat);
             super.vfunc_paint_target(...args);
         }
 
-        update(brightness, gammaK) {
+        update(brightness, gammaK, monitorRects) {
             this._brightness = brightness;
             this._gammaK = gammaK;
+            this._monitorRects = monitorRects;
             this.queue_repaint();
         }
     }
@@ -109,24 +141,21 @@ export default class SoftBrightnessExtension extends Extension {
 
         this._monitorManager.setChangeHook(() => {
             this._overlayManager.resetSize();
-            this._on_brightness_change(true);
+            this._on_brightness_change();
         });
 
         this._cursorManager.setChangeHook(() => {
-            this._on_brightness_change(true);
+            this._on_brightness_change();
         });
 
         this._screenshotManager.setPreCaptureHook(() => {
-            // Pass suppressChangeHook=true to avoid triggering _on_brightness_change(),
-            // which would toggle _allowUnredirect()/_preventUnredirect() and disrupt
-            // the Mutter compositor pipeline synchronously before clutter_stage_paint_to_content().
             this._cursorManager.setActive(false, true);
-            this._overlayManager.hideOverlaysForScreenshot();
+            this._overlayManager.hideForScreenshot();
         });
 
         this._screenshotManager.setPostCaptureHook(() => {
             this._cursorManager.setActive(true);
-            this._on_brightness_change(false);
+            this._on_brightness_change();
         });
 
         this._monitorManager.enable();
@@ -242,14 +271,12 @@ export default class SoftBrightnessExtension extends Extension {
         this._logger.log_debug('_enableSettingsMonitoring()');
 
         const callbacks = {
-            'changed::min-brightness': () => this._on_brightness_change(false),
-            'changed::current-brightness': () => this._on_brightness_change(false),
-            'changed::monitors': () => this._on_brightness_change(true),
-            'changed::builtin-monitor': () => this._on_brightness_change(true),
-            'changed::use-backlight': () => this._on_brightness_change(true),
-            'changed::prevent-unredirect': () => this._on_brightness_change(true),
-            'changed::dimming-mode': () => this._on_brightness_change(true),
-            'changed::shader-gamma': () => this._on_brightness_change(false),
+            'changed::min-brightness': () => this._on_brightness_change(),
+            'changed::current-brightness': () => this._on_brightness_change(),
+            'changed::monitors': () => this._on_brightness_change(),
+            'changed::builtin-monitor': () => this._on_brightness_change(),
+            'changed::use-backlight': () => this._on_brightness_change(),
+            'changed::shader-gamma': () => this._on_brightness_change(),
             'changed::debug': () => this._on_debug_change(),
             'changed::per-workspace-brightness': () => {
                 // When toggled off, clear any saved per-workspace levels so the
@@ -272,7 +299,7 @@ export default class SoftBrightnessExtension extends Extension {
         this._removeSettingsCallbacks = [];
     }
 
-    _on_brightness_change(force) {
+    _on_brightness_change() {
         let curBrightness = this._getBrightnessLevel();
         const minBrightness = this._settings.get_double('min-brightness');
 
@@ -283,11 +310,10 @@ export default class SoftBrightnessExtension extends Extension {
             return;
         }
         if (curBrightness >= 1) {
-            this._overlayManager.hideOverlays(false);
+            this._overlayManager.hide();
             this._cursorManager.setActive(false);
         } else {
-            this._overlayManager.showOverlays(curBrightness, force);
-            // Only activate cursor if overlays were successfully created
+            this._overlayManager.show(curBrightness);
             this._cursorManager.setActive(this._overlayManager.initialized());
         }
     }
@@ -932,18 +958,16 @@ class CursorManager {
     }
 }
 
-// Core functions to show & hide overlays
+// Shader effect lifecycle and cursor actor hosting.
 class OverlayManager {
     constructor(logger, settings, monitorManager) {
         this._logger = logger;
         this._settings = settings;
         this._monitorManager = monitorManager;
 
-        this._overlays = null;
         this._actorGroup = null;
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
-        this._brightnessEffect = null;
         this._shaderEffect = null;
     }
 
@@ -957,23 +981,21 @@ class OverlayManager {
         const clutterContainer = Clutter.Container !== undefined;
         this._actorAddedConnection = global.stage.connect(
             clutterContainer ? 'actor-added' : 'child-added',
-            this._restackOverlays.bind(this),
+            this._restackActorGroup.bind(this),
         );
         this._actorRemovedConnection = global.stage.connect(
             clutterContainer ? 'actor-removed' : 'child-removed',
-            this._restackOverlays.bind(this),
+            this._restackActorGroup.bind(this),
         );
     }
 
     disable() {
         global.stage.disconnect(this._actorAddedConnection);
         global.stage.disconnect(this._actorRemovedConnection);
-
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
 
-        this.hideOverlays(true);
-        this._overlays = null;
+        this.hide();
 
         global.stage.remove_child(this._actorGroup);
         this._actorGroup.destroy();
@@ -985,12 +1007,7 @@ class OverlayManager {
     }
 
     initialized() {
-        const mode = this._settings.get_string('dimming-mode');
-        if (mode === 'effect')
-            return this._brightnessEffect !== null;
-        if (mode === 'shader')
-            return this._shaderEffect !== null;
-        return this._overlays !== null && this._overlays.length > 0;
+        return this._shaderEffect !== null;
     }
 
     addActor(actor) {
@@ -998,215 +1015,67 @@ class OverlayManager {
     }
 
     removeActor(actor) {
-        // If we have already destroyed the actor group, its child actors
-        // are already gone too.
-        if (this._actorGroup) {
+        if (this._actorGroup)
             this._actorGroup.remove_child(actor);
-        }
     }
 
-    _restackOverlays() {
-        this._logger.log_debug('_restackOverlays()');
+    _restackActorGroup() {
         this._actorGroup.get_parent().set_child_above_sibling(this._actorGroup, null);
-        if (this._overlays !== null) {
-            for (let i = 0; i < this._overlays.length; i++) {
-                this._actorGroup.set_child_above_sibling(this._overlays[i], null);
-            }
-        }
     }
 
-    showOverlays(brightness, force) {
-        this._logger.log_debug('_showOverlays(' + brightness + ', ' + force + ')');
-        const mode = this._settings.get_string('dimming-mode');
-        if (mode === 'effect') {
-            this._hideShaderEffect();
-            this._showEffect(brightness);
-            return;
-        }
-        if (mode === 'shader') {
-            this._hideEffect();
-            this._showShaderEffect(brightness);
-            return;
-        }
-        this._hideEffect();
-        this._hideShaderEffect();
-
-        if (this._overlays == null || force) {
-            const monitors = this._monitorManager.getMonitors();
-            if (monitors == null) {
-                this._logger.log_debug('_showOverlays(): monitors not ready yet, skipping');
-                return;
-            }
-            if (force) {
-                this.hideOverlays(false);
-            }
-            const preventUnredirect = this._settings.get_string('prevent-unredirect');
-            switch (preventUnredirect) {
-                case 'always':
-                case 'when-correcting':
-                    this._preventUnredirect();
-                    break;
-                case 'never':
-                    this._allowUnredirect();
-                    break;
-                default:
-                    this._logger.log('_showOverlays(): Unexpected prevent-unredirect="' + preventUnredirect + '"');
-                    break;
-            }
-
-            this._overlays = [];
-            for (let i = 0; i < monitors.length; i++) {
-                const monitor = monitors[i];
-                this._logger.log_debug('Create overlay #' + i + ': ' + monitor.width + 'x' + monitor.height + '@' + monitor.x + ',' + monitor.y);
-                const overlay = new St.Label({
-                    style: 'border-radius: 0px; background-color: rgba(0,0,0,1);',
-                    text: '',
-                });
-                overlay.set_position(monitor.x, monitor.y);
-                overlay.set_width(monitor.width);
-                overlay.set_height(monitor.height);
-
-                this._actorGroup.add_child(overlay);
-                this._overlays.push(overlay);
-            }
-        }
-
-        const opacity = (1.0 - brightness) * 255;
-        for (let i = 0; i < this._overlays.length; i++) {
-            this._logger.log_debug('_showOverlay(): set opacity ' + opacity + ' on overlay #' + i);
-            this._overlays[i].opacity = opacity;
-        }
-    }
-
-    // Effect mode: apply BrightnessContrastEffect directly to global.stage.
-    // Formula (Clutter convention, values in [-1, 1]):
-    //   out = clamp((in - 0.5) * (1 + contrast) + 0.5 + brightness_offset, 0, 1)
-    // We set contrast=0 and use a pure additive shift so that:
-    //   out = clamp(in + (brightness - 1), 0, 1)
-    // At brightness=1: offset=0 → identity.
-    // At brightness=B<1: whites land at B (same as overlay), near-darks below
-    //   (1-B) luminance clamp to true black rather than scaling toward dark grey.
-    // A future ShaderEffect could apply a non-linear gamma curve here for
-    // true highlight-only compression.
-    _showEffect(brightness) {
-        if (!this._brightnessEffect) {
-            this._logger.log_debug('_showEffect(): creating BrightnessContrastEffect on stage');
-            this._brightnessEffect = new Clutter.BrightnessContrastEffect();
-            global.stage.add_effect_with_name('soft-brightness-plus', this._brightnessEffect);
-        }
-        const brightnessOffset = brightness - 1;
-        this._logger.log_debug('_showEffect(): brightness_offset=' + brightnessOffset.toFixed(3));
-        this._brightnessEffect.brightness = brightnessOffset;
-        this._brightnessEffect.contrast = 0;
-        this._brightnessEffect.enabled = true;
-    }
-
-    _hideEffect() {
-        if (this._brightnessEffect) {
-            this._logger.log_debug('_hideEffect(): removing BrightnessContrastEffect from stage');
-            global.stage.remove_effect(this._brightnessEffect);
-            this._brightnessEffect = null;
-        }
-    }
-
-    _showShaderEffect(brightness) {
+    show(brightness) {
+        this._logger.log_debug('show(' + brightness + ')');
         const gammaK = this._settings.get_double('shader-gamma');
+        const monitorRects = this._getShaderMonitorRects();
         if (!this._shaderEffect) {
-            this._logger.log_debug('_showShaderEffect(): creating GammaCurveEffect on stage (gamma=' + gammaK + ')');
-            this._shaderEffect = new GammaCurveEffect(brightness, gammaK);
+            this._logger.log_debug('show(): creating GammaCurveEffect (gamma=' + gammaK + ', rects=' + monitorRects.length + ')');
+            this._shaderEffect = new GammaCurveEffect(brightness, gammaK, monitorRects);
             global.stage.add_effect_with_name('soft-brightness-plus-shader', this._shaderEffect);
         } else {
-            this._shaderEffect.update(brightness, gammaK);
+            this._shaderEffect.update(brightness, gammaK, monitorRects);
         }
         this._shaderEffect.enabled = true;
     }
 
-    _hideShaderEffect() {
+    hide() {
         if (this._shaderEffect) {
-            this._logger.log_debug('_hideShaderEffect(): removing GammaCurveEffect from stage');
+            this._logger.log_debug('hide(): removing GammaCurveEffect from stage');
             global.stage.remove_effect(this._shaderEffect);
             this._shaderEffect = null;
         }
     }
 
-    hideOverlays(forceUnpreventUnredirect) {
-        this._hideEffect();
-        this._hideShaderEffect();
-        if (this._overlays != null) {
-            this._logger.log_debug('_hideOverlays(): drop overlays, count=' + this._overlays.length);
-            for (let i = 0; i < this._overlays.length; i++) {
-                this._actorGroup.remove_child(this._overlays[i]);
-            }
-            this._overlays = null;
-        }
-
-        let preventUnredirect = this._settings.get_string('prevent-unredirect');
-        if (forceUnpreventUnredirect) {
-            preventUnredirect = 'never';
-        }
-        switch (preventUnredirect) {
-            case 'always':
-                this._preventUnredirect();
-                break;
-            case 'when-correcting':
-            case 'never':
-                this._allowUnredirect();
-                break;
-            default:
-                this._logger.log('_hideOverlays(): Unexpected prevent-unredirect="' + preventUnredirect + '"');
-                break;
-        }
-    }
-
-    // Remove overlays from the stage before screenshot capture.
-    // Deliberately does NOT call _allowUnredirect(): staying in compositing mode
-    // keeps the Clutter scene graph in a valid, fully-painted state so that
-    // clutter_stage_paint_to_content() (the Wayland screenshot path in GS 46+)
-    // captures the background and window content rather than a transparent frame.
-    // Switching unredirect state synchronously just before capture was observed to
-    // invalidate the compositor's scene, producing a fully-transparent result.
-    hideOverlaysForScreenshot() {
-        // Effect/shader mode: disable for the duration of the screenshot.
-        // The post-capture hook restores via showOverlays() which re-enables.
-        if (this._brightnessEffect) {
-            this._logger.log_debug('hideOverlaysForScreenshot(): disabling BrightnessContrastEffect');
-            this._brightnessEffect.enabled = false;
-            return;
-        }
+    // Disable the shader for the duration of a screenshot without tearing down
+    // the effect object. The post-capture hook calls show() to re-enable it.
+    // Staying in compositing mode keeps the Clutter scene valid so that
+    // clutter_stage_paint_to_content() (GS 46+ Wayland screenshot path)
+    // captures real content rather than a transparent frame.
+    hideForScreenshot() {
         if (this._shaderEffect) {
-            this._logger.log_debug('hideOverlaysForScreenshot(): disabling GammaCurveEffect');
+            this._logger.log_debug('hideForScreenshot(): disabling GammaCurveEffect');
             this._shaderEffect.enabled = false;
-            return;
-        }
-        if (this._overlays != null) {
-            this._logger.log_debug('hideOverlaysForScreenshot(): removing overlays, count=' + this._overlays.length);
-            for (let i = 0; i < this._overlays.length; i++) {
-                this._actorGroup.remove_child(this._overlays[i]);
-            }
-            this._overlays = null;
         }
     }
 
-    _preventUnredirect() {
-        if (!this._unredirectPrevented) {
-            this._logger.log_debug('_preventUnredirect(): disabling unredirects, prevent-unredirect=' + this._settings.get_string('prevent-unredirect'));
-            // In GS 48, *_unredirect_for_display functions were moved to global compositor.
-            global.compositor.disable_unredirect !== undefined
-              ? global.compositor.disable_unredirect()
-              : Meta.disable_unredirect_for_display(global.display);
-            this._unredirectPrevented = true;
-        }
-    }
+    // Returns UV-space rects [{x,y,w,h}] for the monitors to be dimmed.
+    // Empty array means dim the entire stage (monitors=all).
+    _getShaderMonitorRects() {
+        const enabledMonitors = this._settings.get_string('monitors');
+        if (enabledMonitors === 'all') return [];
 
-    _allowUnredirect() {
-        if (this._unredirectPrevented) {
-            this._logger.log_debug('_allowUnredirect(): enabling unredirects, prevent-unredirect=' + this._settings.get_string('prevent-unredirect'));
-            // In GS 48, *_unredirect_for_display functions were moved to global compositor.
-            global.compositor.enable_unredirect !== undefined
-              ? global.compositor.enable_unredirect()
-              : Meta.enable_unredirect_for_display(global.display);
-            this._unredirectPrevented = false;
-        }
+        const monitors = this._monitorManager.getMonitors();
+        if (!monitors || monitors.length === 0) return [];
+
+        const sw = global.stage.width;
+        const sh = global.stage.height;
+        if (!sw || !sh) return [];
+
+        return monitors.map(m => ({
+            x: m.x / sw,
+            y: m.y / sh,
+            w: m.width / sw,
+            h: m.height / sh,
+        }));
     }
 }
 
@@ -1275,25 +1144,24 @@ class MonitorManager {
         }
 
         const enabledMonitors = this._settings.get_string('monitors');
-        let monitors;
-        this._logger.log_debug('_showOverlays(): enabledMonitors="' + enabledMonitors + '"');
+        this._logger.log_debug('getMonitors(): enabledMonitors="' + enabledMonitors + '"');
         if (enabledMonitors == 'all') {
-            monitors = Main.layoutManager.monitors;
+            return Main.layoutManager.monitors;
         } else if (enabledMonitors == 'built-in' || enabledMonitors == 'external') {
             const builtinMonitorName = this._settings.get_string('builtin-monitor');
-            this._logger.log_debug('_showOverlays(): builtinMonitorName="' + builtinMonitorName + '"');
-            monitors = [];
+            this._logger.log_debug('getMonitors(): builtinMonitorName="' + builtinMonitorName + '"');
+            const monitors = [];
             for (let i = 0; i < Main.layoutManager.monitors.length; i++) {
                 if ((enabledMonitors == 'built-in' && this._monitorNames[i] == builtinMonitorName) ||
                     (enabledMonitors == 'external' && this._monitorNames[i] != builtinMonitorName)) {
                     monitors.push(Main.layoutManager.monitors[i]);
                 }
             }
+            return monitors;
         } else {
-            this._logger.log('_showOverlays(): Unhandled "monitors" setting = ' + enabledMonitors);
+            this._logger.log('getMonitors(): unhandled "monitors" setting = ' + enabledMonitors);
             return null;
         }
-        return monitors;
     }
 
     _on_monitors_change() {

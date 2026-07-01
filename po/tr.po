@@ -1,174 +1,218 @@
-# Turkish translations for soft-brightness-plus package.
-# Copyright (C) 2020 THE soft-brightness-plus'S COPYRIGHT HOLDER
+# Turkish translations for soft-brightness-plus.
+# Copyright (C) 2019-2024 THE soft-brightness-plus AUTHORS
 # This file is distributed under the same license as the soft-brightness-plus package.
 # Muha Aliss, 2020.
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: soft-brightness-plus\n"
-"Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2022-03-02 08:06-0800\n"
-"PO-Revision-Date: 2022-03-02 08:07-0800\n"
-"Last-Translator: Muha Aliss <muhaaliss@pm.me>\n"
-"Language-Team: Turkish\n"
+"Report-Msgid-Bugs-To: https://github.com/jkitching/soft-brightness-plus/issues\n"
+"POT-Creation-Date: 2024-01-01 00:00+0000\n"
+"PO-Revision-Date: 2024-01-01 00:00+0000\n"
+"Last-Translator: Muha Aliss\n"
+"Language-Team: none\n"
 "Language: tr\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-"X-Generator: Poedit 2.4.1\n"
-"X-Poedit-SourceCharset: UTF-8\n"
 
-#: src/prefs.js:51
+#: src/prefs.js
 msgid "Soft Brightness Plus"
 msgstr "Soft Brightness Plus"
 
-#: src/prefs.js:61
+#: src/prefs.js
 msgid "Version"
 msgstr "Sürüm"
 
-#: src/prefs.js:83
-msgid "Use backlight control:"
-msgstr "Arka ışık kontrolünü kullan:"
+#: src/prefs.js
+msgid "Control overlay brightness independently"
+msgstr "Parlaklığı bağımsız olarak kontrol et"
 
-#: src/prefs.js:94
-msgid "Monitor(s):"
-msgstr "Monitör(ler):"
+#: src/prefs.js
+msgid "Show a separate slider in the quick settings menu."
+msgstr "Hızlı ayarlar menüsünde ayrı bir kaydırıcı göster."
 
-#: src/prefs.js:98
+#: src/prefs.js
 msgid "All"
 msgstr "Tümü"
 
-#: src/prefs.js:99
+#: src/prefs.js
 msgid "Built-in"
-msgstr "Yerleşik"
+msgstr "Dahili"
 
-#: src/prefs.js:100
+#: src/prefs.js
 msgid "External"
 msgstr "Harici"
 
-#: src/prefs.js:108
+#: src/prefs.js
+msgid "Monitor(s):"
+msgstr "Monitör(ler):"
+
+#: src/prefs.js
 msgid "Built-in monitor:"
-msgstr "Yerleşik monitör:"
+msgstr "Dahili monitör:"
 
-#: src/prefs.js:131
-msgid "Full-screen behavior:"
-msgstr "Tam ekran davranışı:"
-
-#: src/prefs.js:135
-msgid "Do not enforce brightness in full-screen"
-msgstr "Tam ekranda parlaklığı zorunlu kılma"
-
-#: src/prefs.js:136
-msgid "Brightness enforced in full-screen"
-msgstr "Tam ekranda uygulanan parlaklık"
-
-#: src/prefs.js:137
-msgid "Brightness enforced in full-screen, always tear-free"
-msgstr "Tam ekranda uygulanan parlaklık, her zaman yırtılmaz"
-
-#: src/prefs.js:145
+#: src/prefs.js
 msgid "Minimum brightness (0..1):"
 msgstr "Minimum parlaklık (0..1):"
 
-#: src/prefs.js:164
+#: src/prefs.js
 msgid "Mouse cursor brightness control:"
 msgstr "Fare imleci parlaklık kontrolü:"
 
-#: src/prefs.js:175
+#: src/prefs.js
 msgid "Debug:"
 msgstr "Hata ayıklama:"
 
-#: src/prefs.js:188
-msgid ""
-"Copyright © 2019-2022 Philippe Troin (<a href=\"https://github.com/F-i-f\">F-"
-"i-f</a> on GitHub)"
-msgstr "Telif hakkı © 2019-2022 Philippe Troin (GitHub'da <a href=\"https://github.com/F-i-f\">F-i-f</a>)"
+#: src/prefs.js
+msgid "Keyboard shortcuts"
+msgstr "Klavye kısayolları"
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:15
+#: src/prefs.js
+msgid "Default shortcuts use Shift + hardware brightness keys. Clear to disable; use gsettings to set a custom binding."
+msgstr "Varsayılan kısayollar Shift + donanım parlaklık tuşlarını kullanır. Devre dışı bırakmak için Temizle'yi seçin; özel bağlama için gsettings kullanın."
+
+#: src/prefs.js
+msgid "Increase brightness"
+msgstr "Parlaklığı artır"
+
+#: src/prefs.js
+msgid "Decrease brightness"
+msgstr "Parlaklığı azalt"
+
+#: src/prefs.js
+msgid "Disabled"
+msgstr "Devre dışı"
+
+#: src/prefs.js
+msgid "Clear"
+msgstr "Temizle"
+
+#: src/prefs.js
+msgid "Reset"
+msgstr "Sıfırla"
+
+#: src/prefs.js
+msgid "Copyright © 2019-2022 Philippe Troin (<a href=\"https://github.com/F-i-f\">F-i-f</a> on GitHub)"
+msgstr "Copyright © 2019-2022 Philippe Troin (<a href=\"https://github.com/F-i-f\">F-i-f</a> GitHub'da)"
+
+#: src/prefs.js
+msgid "Copyright © 2022-2024 Joel Kitching (<a href=\"https://github.com/jkitching\">jkitching</a> on GitHub)"
+msgstr "Copyright © 2022-2024 Joel Kitching (<a href=\"https://github.com/jkitching\">jkitching</a> GitHub'da)"
+
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Use backlight control."
 msgstr "Arka ışık kontrolünü kullan."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:16
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Use the regular backlight control."
 msgstr "Normal arka ışık kontrolünü kullan."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:20
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Monitors."
 msgstr "Monitörler."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:21
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "The monitors whose brightness should be adjusted."
-msgstr "Parlaklığı ayarlanması gereken monitörler."
+msgstr "Parlaklığı ayarlanacak monitörler."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:25
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Builtin monitor."
 msgstr "Dahili monitör."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:26
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "The name of the built-in monitor."
-msgstr "Yerleşik monitörün adı."
+msgstr "Dahili monitörün adı."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:30
-msgid "Prevent window unredirecting behavior."
-msgstr "Pencere yeniden yönlendirme davranışını önle."
-
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:31
-msgid ""
-"If set to never, unredirection is never prevented. If set to when-"
-"correcting, unredirection will be prevented when the brightness is not at "
-"the maximum setting (and an alpha layer is lowering the brightness). If set "
-"to always, window unredirection will always be prevented when this extension "
-"is active, allowing tear-free display."
-msgstr ""
-"Hiçbir zaman olarak ayarlanırsa, yeniden yönlendirme asla engellenmez. "
-"Düzeltme sırasında ayarlanırsa, parlaklık maksimum ayarda olmadığında (ve "
-"bir alfa katmanı parlaklığı düşürdüğünde) yeniden yönlendirme "
-"engellenecektir. Her zaman olarak ayarlanırsa, bu uzantı etkin olduğunda "
-"pencere yeniden yönlendirmesi her zaman engellenecek ve yırtılmasız görüntü "
-"sağlanacaktır."
-
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:41
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Minimum brightness."
 msgstr "Minimum parlaklık."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:42
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Minimum brightness level."
 msgstr "Minimum parlaklık seviyesi."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:47
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Current brightness level."
 msgstr "Mevcut parlaklık seviyesi."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:48
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "The current brightness level."
 msgstr "Mevcut parlaklık seviyesi."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:52
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Mouse cursor brightness control."
 msgstr "Fare imleci parlaklık kontrolü."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:53
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid ""
 "When enabled, the mouse cursor follows the brightness setting. When "
 "disabled, the mouse cursor always remains at full brightness. Controlling "
 "mouse cursor brightness can sometimes show the wrong cursor and introduce "
 "cursor lag. You may want to disable it if you encounter cursor issues. Note "
-"that if another Gnome Shell component clones the mouse (like the Zoom "
-"accessibility feature), the cursor will follow the screen brightness."
+"that when other Gnome Shell components clone the mouse (like the Zoom "
+"accessibility feature), this feature may not work correctly, or there may "
+"be multiple cursors shown on the screen."
 msgstr ""
 "Etkinleştirildiğinde, fare imleci parlaklık ayarını takip eder. Devre dışı "
 "bırakıldığında, fare imleci her zaman tam parlaklıkta kalır. Fare imleci "
-"parlaklığını kontrol etmek bazen yanlış imleci gösterebilir ve imleç "
-"gecikmesine neden olabilir. İmleç sorunlarıyla karşılaşırsanız devre dışı "
-"bırakmak isteyebilirsiniz. Başka bir Gnome Shell bileşeni fareyi klonlarsa "
-"(Zoom erişilebilirlik özelliği gibi), imlecin ekran parlaklığını "
-"izleyeceğini unutmayın."
+"parlaklık kontrolü bazen yanlış imleç gösterebilir veya gecikmeye neden "
+"olabilir. İmleç sorunlarıyla karşılaşırsanız bu özelliği devre dışı bırakın. "
+"GNOME Shell'in başka bir bileşeni fareyi klonluyorsa (Yakınlaştırma "
+"erişilebilirlik özelliği gibi), bu özellik düzgün çalışmayabilir veya "
+"birden fazla imleç görüntülenebilir."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:65
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+msgid "Keyboard shortcut: increase brightness."
+msgstr "Klavye kısayolu: parlaklığı artır."
+
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+msgid "Keyboard shortcut to increase the brightness by one step (5%). Set to an empty list to disable."
+msgstr "Parlaklığı bir adım (5%) artırmak için klavye kısayolu. Devre dışı bırakmak için boş liste olarak ayarlayın."
+
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+msgid "Keyboard shortcut: decrease brightness."
+msgstr "Klavye kısayolu: parlaklığı azalt."
+
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+msgid "Keyboard shortcut to decrease the brightness by one step (5%). Set to an empty list to disable."
+msgstr "Parlaklığı bir adım (5%) azaltmak için klavye kısayolu. Devre dışı bırakmak için boş liste olarak ayarlayın."
+
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Debugging."
 msgstr "Hata ayıklama."
 
-#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml:66
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
 msgid "Enable debugging for the extension."
 msgstr "Uzantı için hata ayıklamayı etkinleştir."
+
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+msgid "Gamma curve exponent."
+msgstr "Gama eğrisi üssü."
+
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+msgid ""
+"Controls the gamma curve used for dimming. A value of 1.0 is linear. "
+"Values above 1.0 preserve shadows better while compressing highlights more "
+"aggressively — 2.0 is the recommended starting point."
+msgstr ""
+"Karartma için kullanılan gama eğrisini kontrol eder. 1,0 değeri doğrusaldır. "
+"1,0'ın üzerindeki değerler, parlak alanları daha agresif şekilde sıkıştırırken "
+"karanlık alanları daha iyi korur — 2,0 önerilen başlangıç noktasıdır."
+
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+msgid "Per-workspace brightness memory."
+msgstr "Çalışma alanı başına parlaklık hafızası."
+
+#: schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
+msgid ""
+"When enabled, the extension remembers a separate brightness level for each "
+"workspace and restores it automatically when you switch. Set brightness on "
+"each workspace once; switching will apply that workspace's saved level "
+"thereafter."
+msgstr ""
+"Etkinleştirildiğinde, uzantı her çalışma alanı için ayrı bir parlaklık "
+"seviyesi hatırlar ve geçiş yapıldığında otomatik olarak geri yükler. Her "
+"çalışma alanında parlaklığı bir kez ayarlayın; geçiş yapıldığında kaydedilen "
+"seviye uygulanacaktır."
