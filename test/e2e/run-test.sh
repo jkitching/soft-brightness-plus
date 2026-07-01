@@ -43,6 +43,30 @@ MODE="$1"; UUID="$2"; LOG="$3"; SETTLE="$4"
 # Enable the extension before gnome-shell reads settings
 gsettings set org.gnome.shell enabled-extensions "['${UUID}']"
 
+# Start a system D-Bus daemon and elogind so gnome-shell can connect to
+# org.freedesktop.login1. Without a real logind, gnome-shell 46 throws
+# during background init and dies from a C-level heap abort.
+SYSTEM_BUS_SOCK=/tmp/system-dbus.sock
+dbus-daemon --config-file=/dev/stdin \
+    --address="unix:path=${SYSTEM_BUS_SOCK}" \
+    --print-pid --fork >/dev/null <<'DBUSCONF'
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>system</type>
+  <allow_anonymous/>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+DBUSCONF
+export DBUS_SYSTEM_BUS_ADDRESS="unix:path=${SYSTEM_BUS_SOCK}"
+/usr/lib/elogind/elogind &
+ELOGIND_PID=$!
+sleep 2
+
 if [ "${MODE}" = "x11" ]; then
     DISPLAY=:99 \
     XDG_SESSION_TYPE=x11 \
@@ -88,5 +112,6 @@ fi
 
 kill "${GS_PID}" 2>/dev/null || true
 wait "${GS_PID}" 2>/dev/null || true
+kill "${ELOGIND_PID}" 2>/dev/null || true
 echo "  PASS: ${MODE} test complete"
 INNER

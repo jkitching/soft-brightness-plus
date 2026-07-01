@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     dbus-x11 \
     dbus \
+    elogind \
     at-spi2-core \
     libgl1-mesa-dri \
     libglx-mesa0 \
