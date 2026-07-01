@@ -1,28 +1,61 @@
-name: Build GNOME Extension
+name: Build and Test GNOME Extension
 
 on:
   push:
     branches: [ master ]
+  pull_request:
+    branches: [ master ]
 
 jobs:
+  unit-test:
+    runs-on: ubuntu-latest
+    name: Unit tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-bin gettext
+
+      - name: Run unit tests
+        run: make test
+
   build:
     runs-on: ubuntu-latest
-    name: Build
+    name: Build extension zip
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y gettext libglib2.0-bin
+          sudo apt-get install -y libglib2.0-bin gettext
 
       - name: Build extension
-        run: |
-          make zip
+        run: make zip
 
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build.zip
+          name: extension-zip
+          path: build/extension.zip
+
+  e2e:
+    runs-on: ubuntu-latest
+    name: E2E (container)
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download extension zip
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-zip
           path: build/
+
+      - name: Run E2E tests
+        run: test/e2e.sh

@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 51)'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes (one bullet per line, no leading dashes)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    name: Build, publish GitHub release, upload to e.g.o
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-bin gettext
+
+      - name: Bump version in Makefile
+        run: |
+          sed -i "s/^VERSION  := .*/VERSION  := ${{ inputs.version }}/" Makefile
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Makefile
+          git commit -m "Bump to version ${{ inputs.version }}"
+          git push
+
+      - name: Build extension zip
+        run: make zip
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOTES=$(echo "${{ inputs.release_notes }}" | sed 's/^/- /')
+          gh release create "v${{ inputs.version }}" \
+            "soft-brightness-plus@joelkitching.com.v${{ inputs.version }}.shell-extension.zip" \
+            --title "Version ${{ inputs.version }}" \
+            --notes "${NOTES}"
+
+      - name: Upload to extensions.gnome.org
+        if: ${{ env.EGO_SESSION_KEY != '' }}
+        env:
+          EGO_SESSION_KEY: ${{ secrets.EGO_SESSION_KEY }}
+        run: |
+          pip install ego-upload
+          ego-upload \
+            --session-key "${EGO_SESSION_KEY}" \
+            "soft-brightness-plus@joelkitching.com.v${{ inputs.version }}.shell-extension.zip"
