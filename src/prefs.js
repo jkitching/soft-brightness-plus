@@ -86,53 +86,58 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             this._settings.bind('use-backlight', this.enabled_control, 'active', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.enabled_control);
 
-            this.min_brightness_control = new Adw.SpinRow({
-                title: _('Minimum brightness:'),
-                subtitle: this._getDescription('min-brightness'),
-                digits: 2,
+            this.min_brightness_control = new Adw.ActionRow({
+                title: _('Minimum brightness'),
+            });
+            const mbScale = new Gtk.Scale({
+                orientation: Gtk.Orientation.HORIZONTAL,
+                hexpand: true,
+                width_request: 160,
+                draw_value: false,
+                valign: Gtk.Align.CENTER,
                 adjustment: new Gtk.Adjustment({
                     lower: 0.0,
                     upper: 1.0,
                     step_increment: 0.01,
                 }),
             });
-            this._settings.bind('min-brightness', this.min_brightness_control, 'value', Gio.SettingsBindFlags.DEFAULT);
+            this.mbLabel = new Gtk.Label({ width_chars: 5, xalign: 1.0, valign: Gtk.Align.CENTER });
+            const mbBox = new Gtk.Box({ spacing: 8, valign: Gtk.Align.CENTER });
+            mbBox.append(mbScale);
+            mbBox.append(this.mbLabel);
+            this.min_brightness_control.add_suffix(mbBox);
+            this.min_brightness_control.set_activatable_widget(mbScale);
+            this._settings.bind('min-brightness', mbScale.get_adjustment(), 'value', Gio.SettingsBindFlags.DEFAULT);
+            const mbFmt = (v) => v < 0.005 ? _('Off') : v.toFixed(2);
+            this.mbLabel.set_label(mbFmt(mbScale.get_value()));
+            mbScale.connect('value-changed', () => this.mbLabel.set_label(mbFmt(mbScale.get_value())));
             group.add(this.min_brightness_control);
 
-            // White compression as an expander: the enable-switch acts as the
-            // mode toggle, and the strength slider is only visible when active.
-            const initialGamma = this._settings.get_double('shader-gamma');
-            const wcEnabled = initialGamma > 1.0;
-            this.white_compression_row = new Adw.ExpanderRow({
+            this.white_compression_row = new Adw.ActionRow({
                 title: _('White compression'),
-                show_enable_switch: true,
-                enable_expansion: wcEnabled,
-                expanded: wcEnabled,
             });
-
-            this.shader_gamma_control = new Adw.SpinRow({
-                title: _('Strength:'),
-                subtitle: _('1.0 = off. Higher values compress bright highlights more aggressively. 2.0 is a good starting point.'),
-                digits: 2,
+            const wcScale = new Gtk.Scale({
+                orientation: Gtk.Orientation.HORIZONTAL,
+                hexpand: true,
+                width_request: 160,
+                draw_value: false,
+                valign: Gtk.Align.CENTER,
                 adjustment: new Gtk.Adjustment({
                     lower: 1.0,
                     upper: 4.0,
                     step_increment: 0.1,
                 }),
             });
-            this._settings.bind('shader-gamma', this.shader_gamma_control, 'value', Gio.SettingsBindFlags.DEFAULT);
-            this.white_compression_row.add_row(this.shader_gamma_control);
-
-            // When the toggle is switched off, reset gamma to 1.0 (disabled).
-            // When switched on, restore to a sensible default if still at 1.0.
-            this.white_compression_row.connect('notify::enable-expansion', (row) => {
-                if (!row.enable_expansion) {
-                    this._settings.set_double('shader-gamma', 1.0);
-                } else if (this._settings.get_double('shader-gamma') <= 1.0) {
-                    this._settings.set_double('shader-gamma', 2.0);
-                }
-            });
-
+            this.wcLabel = new Gtk.Label({ width_chars: 4, xalign: 1.0, valign: Gtk.Align.CENTER });
+            const wcBox = new Gtk.Box({ spacing: 8, valign: Gtk.Align.CENTER });
+            wcBox.append(wcScale);
+            wcBox.append(this.wcLabel);
+            this.white_compression_row.add_suffix(wcBox);
+            this.white_compression_row.set_activatable_widget(wcScale);
+            this._settings.bind('shader-gamma', wcScale.get_adjustment(), 'value', Gio.SettingsBindFlags.DEFAULT);
+            const wcFmt = (v) => v < 1.001 ? _('Off') : v.toFixed(1);
+            this.wcLabel.set_label(wcFmt(wcScale.get_value()));
+            wcScale.connect('value-changed', () => this.wcLabel.set_label(wcFmt(wcScale.get_value())));
             group.add(this.white_compression_row);
 
             this.add(group);
