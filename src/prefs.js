@@ -115,6 +115,7 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
 
             this.white_compression_row = new Adw.ActionRow({
                 title: _('White compression'),
+                subtitle: _('Softens bright highlights without uniformly darkening the screen. Higher values are more aggressive.'),
             });
             const wcScale = new Gtk.Scale({
                 orientation: Gtk.Orientation.HORIZONTAL,
