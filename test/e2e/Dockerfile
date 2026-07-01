@@ -17,9 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -ms /bin/bash tester && \
     mkdir -p /tmp/runtime-tester && \
     chown tester:tester /tmp/runtime-tester && \
-    chmod 700 /tmp/runtime-tester
+    chmod 700 /tmp/runtime-tester && \
+    mkdir -p /tmp/.X11-unix && \
+    chmod 1777 /tmp/.X11-unix
 
 COPY run-test.sh /run-test.sh
+COPY fake-logind.js /fake-logind.js
 RUN chmod +x /run-test.sh
 
 USER tester
