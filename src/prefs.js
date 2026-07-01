@@ -105,7 +105,6 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             const wcEnabled = initialGamma > 1.0;
             this.white_compression_row = new Adw.ExpanderRow({
                 title: _('White compression'),
-                subtitle: _('Reshapes the brightness curve so whites are less harsh without darkening the whole screen.'),
                 show_enable_switch: true,
                 enable_expansion: wcEnabled,
                 expanded: wcEnabled,
