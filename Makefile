@@ -18,7 +18,7 @@ MO_FILES := $(addprefix $(BUILD_DIR)/locale/,$(addsuffix /LC_MESSAGES/$(DOMAIN).
 # Derive VCS tag from git (falls back to "unknown")
 VCS_TAG := $(shell git describe --tags --long --always 2>/dev/null || echo unknown)
 
-.PHONY: all zip dist install clean
+.PHONY: all zip dist install clean test
 
 all: $(BUILD_DIR)/metadata.json $(BUILD_DIR)/schemas/gschemas.compiled $(MO_FILES)
 
@@ -63,6 +63,15 @@ install: all
 	cp $(DBUS_XML) $(INSTALL_DIR)/dbus-interfaces/
 	cp -r $(BUILD_DIR)/locale $(INSTALL_DIR)/
 	@echo "Installed to $(INSTALL_DIR)"
+
+# ── test ──────────────────────────────────────────────────────────────────────
+test: all
+	node --import ./test/register.mjs --test test/*.test.mjs
+	@if command -v gjs >/dev/null 2>&1; then \
+	  gjs -m test/gjs-schema.gjs; \
+	else \
+	  echo "gjs not found — skipping schema validation test"; \
+	fi
 
 # ── clean ─────────────────────────────────────────────────────────────────────
 clean:
