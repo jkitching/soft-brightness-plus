@@ -83,7 +83,6 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
                 title: _('Use hardware backlight'),
                 subtitle: _('When on, the brightness slider adjusts the hardware backlight. When off, the extension dims via the GPU shader.'),
             });
-            // Inverted binding: when switch is ON, use-backlight is true
             this._settings.bind('use-backlight', this.enabled_control, 'active', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.enabled_control);
 
@@ -100,17 +99,18 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             this._settings.bind('min-brightness', this.min_brightness_control, 'value', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.min_brightness_control);
 
-            this.add(group);
-        }
-
-        {
-            const group = new Adw.PreferencesGroup({
+            // White compression as an expander: the enable-switch acts as the
+            // mode toggle, and the strength slider is only visible when active.
+            const initialGamma = this._settings.get_double('shader-gamma');
+            this.white_compression_row = new Adw.ExpanderRow({
                 title: _('White compression'),
-                description: _('Reshapes the brightness curve so whites are less harsh without darkening the whole screen. Applied on top of the brightness setting.'),
+                subtitle: _('Reshapes the brightness curve so whites are less harsh without darkening the whole screen.'),
+                show_enable_switch: true,
+                enable_expansion: initialGamma > 1.0,
             });
 
             this.shader_gamma_control = new Adw.SpinRow({
-                title: _('Strength (1.0 = off, 4.0 = maximum):'),
+                title: _('Strength:'),
                 subtitle: this._getDescription('shader-gamma'),
                 digits: 2,
                 adjustment: new Gtk.Adjustment({
@@ -120,7 +120,19 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
                 }),
             });
             this._settings.bind('shader-gamma', this.shader_gamma_control, 'value', Gio.SettingsBindFlags.DEFAULT);
-            group.add(this.shader_gamma_control);
+            this.white_compression_row.add_row(this.shader_gamma_control);
+
+            // When the toggle is switched off, reset gamma to 1.0 (disabled).
+            // When switched on, restore to a sensible default if still at 1.0.
+            this.white_compression_row.connect('notify::enable-expansion', (row) => {
+                if (!row.enable_expansion) {
+                    this._settings.set_double('shader-gamma', 1.0);
+                } else if (this._settings.get_double('shader-gamma') <= 1.0) {
+                    this._settings.set_double('shader-gamma', 2.0);
+                }
+            });
+
+            group.add(this.white_compression_row);
 
             this.add(group);
         }
