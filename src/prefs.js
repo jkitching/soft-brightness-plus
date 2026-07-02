@@ -137,6 +137,19 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             this._settings.bind('min-brightness', this.min_brightness_control, 'value', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.min_brightness_control);
 
+            this.shader_gamma_control = new Adw.SpinRow({
+                title: _('Dimming curve (1.0–4.0):'),
+                subtitle: this._getDescription('shader-gamma'),
+                digits: 1,
+                adjustment: new Gtk.Adjustment({
+                    lower: 1.0,
+                    upper: 4.0,
+                    step_increment: 0.1,
+                }),
+            });
+            this._settings.bind('shader-gamma', this.shader_gamma_control, 'value', Gio.SettingsBindFlags.DEFAULT);
+            group.add(this.shader_gamma_control);
+
             this.clone_mouse_control = new Adw.SwitchRow({
                 title: _('Mouse cursor brightness control:'),
                 subtitle: this._getDescription('clone-mouse'),
