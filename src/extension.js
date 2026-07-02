@@ -643,45 +643,31 @@ class IndicatorManager {
             this._settings
         );
 
-        // Add to QuickSettings menu right after hardware brightness slider
         const quickSettings = Main.panel.statusArea.quickSettings;
         const brightnessItem = Main.panel.statusArea.quickSettings._brightness?.quickSettingsItems?.[0];
 
-        // Use the brightness item's actual parent rather than assuming it's the first child of menu.box,
-        // since other extensions may have reorganized the panel layout.
-        const gridContainer = brightnessItem?.get_parent();
-
-        if (gridContainer && brightnessItem) {
-            // Find the position of the hardware brightness item in the grid
-            let brightnessPosition = -1;
-            const nChildren = gridContainer.get_n_children();
-
-            for (let i = 0; i < nChildren; i++) {
-                const child = gridContainer.get_child_at_index(i);
-                if (child === brightnessItem) {
-                    brightnessPosition = i;
-                    break;
-                }
-            }
-
-            if (brightnessPosition >= 0) {
-                // Insert right after the hardware brightness slider
-                gridContainer.insert_child_at_index(this._overlayBrightnessItem, brightnessPosition + 1);
-                // Set column-span to 2 so it takes full width like other sliders
-                gridContainer.layout_manager.child_set_property(
-                    gridContainer, this._overlayBrightnessItem, 'column-span', 2);
-                this._logger.log_debug(`IndicatorManager: custom slider inserted at position ${brightnessPosition + 1}`);
-            } else {
-                // Fallback: add at beginning
-                gridContainer.insert_child_at_index(this._overlayBrightnessItem, 0);
-                gridContainer.layout_manager.child_set_property(
-                    gridContainer, this._overlayBrightnessItem, 'column-span', 2);
-                this._logger.log_debug('IndicatorManager: custom slider added at position 0');
-            }
-        } else {
-            // Last resort: use addItem
-            quickSettings.menu.addItem(this._overlayBrightnessItem);
+        // Use addItem so the QS layout manager handles column-span correctly.
+        // This appends at the end of the panel initially.
+        if (quickSettings.menu.addItem) {
+            quickSettings.menu.addItem(this._overlayBrightnessItem, 2);
             this._logger.log_debug('IndicatorManager: custom slider added via addItem');
+        } else {
+            // Fallback for environments where addItem is not available
+            quickSettings.menu._grid?.add_child(this._overlayBrightnessItem);
+            this._logger.log_debug('IndicatorManager: custom slider added via _grid.add_child');
+        }
+
+        // Move it to appear directly after the hardware brightness slider.
+        // set_child_above_sibling places the actor immediately after the sibling
+        // in child order, which in a sequential layout means it renders below it.
+        const grid = quickSettings.menu._grid;
+        if (grid && brightnessItem) {
+            try {
+                grid.set_child_above_sibling(this._overlayBrightnessItem, brightnessItem);
+                this._logger.log_debug('IndicatorManager: custom slider moved after hardware brightness slider');
+            } catch (e) {
+                this._logger.log_debug(`IndicatorManager: could not reorder slider: ${e.message}`);
+            }
         }
 
         this._logger.log_debug('IndicatorManager: custom overlay brightness slider added');
