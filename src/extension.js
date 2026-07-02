@@ -657,14 +657,26 @@ class IndicatorManager {
             this._logger.log_debug('IndicatorManager: custom slider added via _grid.add_child');
         }
 
-        // Move it to appear directly after the hardware brightness slider.
-        // set_child_above_sibling places the actor immediately after the sibling
-        // in child order, which in a sequential layout means it renders below it.
-        const grid = quickSettings.menu._grid;
+        // Move it directly after the hardware brightness slider.
+        // Use get_parent() to find the actual grid the brightness item lives in,
+        // then set_child_at_index() to place our item right after it.
+        const grid = brightnessItem?.get_parent();
         if (grid && brightnessItem) {
             try {
-                grid.set_child_above_sibling(this._overlayBrightnessItem, brightnessItem);
-                this._logger.log_debug('IndicatorManager: custom slider moved after hardware brightness slider');
+                const nChildren = grid.get_n_children();
+                let brightnessIndex = -1;
+                for (let i = 0; i < nChildren; i++) {
+                    if (grid.get_child_at_index(i) === brightnessItem) {
+                        brightnessIndex = i;
+                        break;
+                    }
+                }
+                if (brightnessIndex >= 0) {
+                    grid.set_child_at_index(this._overlayBrightnessItem, brightnessIndex + 1);
+                    this._logger.log_debug(`IndicatorManager: custom slider moved to index ${brightnessIndex + 1}`);
+                } else {
+                    this._logger.log_debug('IndicatorManager: could not find brightness item index, slider stays appended');
+                }
             } catch (e) {
                 this._logger.log_debug(`IndicatorManager: could not reorder slider: ${e.message}`);
             }
