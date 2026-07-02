@@ -213,18 +213,18 @@ Install directly from the [Gnome Shell Extensions
 site](https://extensions.gnome.org/extension/5943/soft-brightness-plus/).
 
 Or download the [zip
-file](https://github.com/jkitching/soft-brightness-plus/releases/download/v47/soft-brightness-plus@joelkitching.com.v47.shell-extension.zip)
+file](https://github.com/jkitching/soft-brightness-plus/releases/download/v50/soft-brightness-plus@joelkitching.com.v50.shell-extension.zip)
 from the GitHub [releases
 page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 
 ``` shell
-gnome-extensions install soft-brightness-plus@joelkitching.com.v47.shell-extension.zip
+gnome-extensions install soft-brightness-plus@joelkitching.com.v50.shell-extension.zip
 ```
 
 If you're upgrading from an existing installation, add `--force`:
 
 ``` shell
-gnome-extensions install --force soft-brightness-plus@joelkitching.com.v47.shell-extension.zip
+gnome-extensions install --force soft-brightness-plus@joelkitching.com.v50.shell-extension.zip
 ```
 
 ## Building from source
@@ -246,6 +246,36 @@ gnome-extensions install --force soft-brightness-plus@joelkitching.com.v47.shell
 - To build the extension zip files, run: `ninja -C build extension.zip`, the extension will be found under `build/extension.zip`.
 
 ## Changelog
+
+### Version 50
+#### July 2, 2026
+
+- Add per-workspace brightness memory: each workspace
+  independently remembers its brightness level.
+- Add keyboard shortcuts for brightness control.
+- Add adjustable dimming curve (gamma) in the preferences
+  panel for more natural-feeling brightness reduction.
+- Simplify to shader-only dimming, removing the
+  effect-based dimming mode.
+- Fix overlay slider position in Quick Settings: was
+  rendering at the wrong position due to Clutter grid
+  cell metadata not being set correctly (closes #76).
+- Warn about sleep-prevention side-effect in the
+  "Clone mouse cursor" setting description.
+- Add GNOME 49 end-to-end test suite to CI.
+
+### Version 49
+#### June 30, 2026
+
+- Fix crash in `IndicatorManager` when Quick Settings are
+  unavailable in headless or minimal GNOME environments.
+
+### Version 48
+#### June 30, 2026
+
+- Fix transparent screenshot on GNOME 46 Wayland:
+  suppress cursor hook during pre-capture to avoid
+  triggering screen unredirect.
 
 ### Version 47
 #### June 28, 2026

@@ -30,8 +30,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Makefile
-          git commit -m "Bump to version ${{ inputs.version }}"
-          git push
+          if git diff --cached --quiet; then
+            echo "Makefile already at version ${{ inputs.version }}, skipping commit"
+          else
+            git commit -m "Bump to version ${{ inputs.version }}"
+            git push
+          fi
 
       - name: Build extension zip
         run: make zip
