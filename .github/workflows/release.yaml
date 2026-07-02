@@ -47,11 +47,25 @@ jobs:
             --notes "${NOTES}"
 
       - name: Upload to extensions.gnome.org
-        if: ${{ env.EGO_SESSION_KEY != '' }}
+        if: ${{ secrets.EGO_USER != '' && secrets.EGO_PASSWORD != '' }}
         env:
-          EGO_SESSION_KEY: ${{ secrets.EGO_SESSION_KEY }}
+          EGO_USER: ${{ secrets.EGO_USER }}
+          EGO_PASSWORD: ${{ secrets.EGO_PASSWORD }}
         run: |
-          pip install ego-upload
-          ego-upload \
-            --session-key "${EGO_SESSION_KEY}" \
+          sudo apt-get install -y libjson-glib-dev libgnome-autoar-0-dev libsoup-3.0-dev gettext meson
+          git clone --no-checkout --depth=1 \
+            https://gitlab.gnome.org/GNOME/gnome-shell.git /tmp/gnome-shell-src
+          cd /tmp/gnome-shell-src
+          git sparse-checkout init
+          git sparse-checkout set subprojects/extensions-tool
+          git checkout main
+          meson setup /tmp/ext-tool-build \
+            /tmp/gnome-shell-src/subprojects/extensions-tool \
+            -Dman=false
+          ninja -C /tmp/ext-tool-build
+          cd "$GITHUB_WORKSPACE"
+          /tmp/ext-tool-build/src/gnome-extensions upload \
+            --user="${EGO_USER}" \
+            --password="${EGO_PASSWORD}" \
+            --accept-tos \
             "soft-brightness-plus@joelkitching.com.v${{ inputs.version }}.shell-extension.zip"
