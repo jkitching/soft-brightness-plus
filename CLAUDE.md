@@ -57,23 +57,27 @@ See commit `8218c77` for an example.
 
 ## GitHub Release Process
 
-After committing, pushing, and building the zip:
+### Before releasing
+1. Update `README.md`: add a `### Version XX` changelog section above the previous version, and update the download link (~line 216) to the new zip filename.
+2. Commit and push to master. CI must be green.
 
-```bash
-export GITHUB_TOKEN="$GITHUB_TOKEN_RW"
-gh release create vXX \
-  soft-brightness-plus@joelkitching.com.vXX.shell-extension.zip \
-  --repo jkitching/soft-brightness-plus \
-  --title "Version XX" \
-  --notes "- Changelog bullet 1.
-- Changelog bullet 2."
-```
-
+### Triggering the release
+Go to GitHub → Releases → "Draft a new release":
+- **Tag:** `vXX` (create new tag on master)
 - **Title:** `Version XX`
-- **Tag:** `vXX`
-- **Notes:** bullet points only, unwrapped (no line breaks within bullets)
-- **Asset:** the zip file built above
-- The RW GitHub token is available in the environment as `GITHUB_TOKEN_RW`
+- **Notes:** changelog bullet points
+- Click **Publish release**
+
+The Release workflow fires automatically:
+1. **build** job: checks out the tagged commit, runs `make zip VERSION=XX`, attaches the zip to the release. Runs without approval.
+2. **ego-deploy** job: pauses for required-reviewer approval (you, via the "ego-deploy" GitHub Environment). Once approved, uploads the same zip to extensions.gnome.org using `EGO_USER`/`EGO_PASSWORD` stored in that environment.
+
+### One-time setup (ego-deploy environment)
+In repo Settings → Environments → ego-deploy:
+- Add yourself as a required reviewer
+- Add `EGO_USER` and `EGO_PASSWORD` secrets
+
+The environment protection means no workflow — including one pushed by an agent — can access those credentials without your explicit approval click.
 
 ## Backward Compatibility Patterns
 

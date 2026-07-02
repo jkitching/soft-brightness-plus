@@ -1,62 +1,86 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number (e.g. 51)'
-        required: true
-        type: string
-      release_notes:
-        description: 'Release notes (one bullet per line, no leading dashes)'
-        required: true
-        type: string
+  release:
+    types: [published]
 
 jobs:
-  release:
+  # ── Build ────────────────────────────────────────────────────────────────────
+  # Runs automatically when a GitHub Release is published.
+  # Checks out the tagged commit, builds the zip from source, and attaches it
+  # to the release. The zip is also saved as an artifact for the deploy job.
+  build:
     runs-on: ubuntu-latest
-    name: Build, publish GitHub release, upload to e.g.o
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      zip-name: ${{ steps.ver.outputs.zip-name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Extract version from tag
+        id: ver
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP="soft-brightness-plus@joelkitching.com.v${VERSION}.shell-extension.zip"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "zip-name=${ZIP}" >> "$GITHUB_OUTPUT"
 
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y libglib2.0-bin gettext
 
-      - name: Bump version in Makefile
-        run: |
-          sed -i "s/^VERSION  := .*/VERSION  := ${{ inputs.version }}/" Makefile
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Makefile
-          if git diff --cached --quiet; then
-            echo "Makefile already at version ${{ inputs.version }}, skipping commit"
-          else
-            git commit -m "Bump to version ${{ inputs.version }}"
-            git push
-          fi
-
       - name: Build extension zip
-        run: make zip
+        run: make zip VERSION=${{ steps.ver.outputs.version }}
 
-      - name: Create GitHub release
+      - name: Attach zip to GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          NOTES=$(echo "${{ inputs.release_notes }}" | sed 's/^/- /')
-          gh release create "v${{ inputs.version }}" \
-            "soft-brightness-plus@joelkitching.com.v${{ inputs.version }}.shell-extension.zip" \
-            --title "Version ${{ inputs.version }}" \
-            --notes "${NOTES}"
+          gh release upload "$GITHUB_REF_NAME" \
+            "${{ steps.ver.outputs.zip-name }}" \
+            --clobber
+
+      - name: Save zip as artifact for ego-deploy
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-zip
+          path: ${{ steps.ver.outputs.zip-name }}
+          retention-days: 1
+
+  # ── Deploy to extensions.gnome.org ──────────────────────────────────────────
+  # Requires human approval via the "ego-deploy" GitHub Environment before it
+  # runs. Set up the environment in repo Settings → Environments → ego-deploy,
+  # add yourself as a required reviewer, and store EGO_USER + EGO_PASSWORD
+  # there. The credentials never leave the environment until you approve.
+  #
+  # Security note: credentials live in the environment, not repo-level secrets,
+  # so a pushed workflow change cannot access them without your explicit
+  # approval. We build our own upload tool rather than using a third-party
+  # action so no external code handles the password.
+  ego-deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ego-deploy
+    steps:
+      - name: Download extension zip
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-zip
 
       - name: Upload to extensions.gnome.org
-        if: ${{ env.EGO_USER != '' }}
         env:
           EGO_USER: ${{ secrets.EGO_USER }}
           EGO_PASSWORD: ${{ secrets.EGO_PASSWORD }}
         run: |
-          sudo apt-get install -y libjson-glib-dev libgnome-autoar-0-dev libsoup-3.0-dev gettext meson
+          if [ -z "${EGO_USER}" ] || [ -z "${EGO_PASSWORD}" ]; then
+            echo "EGO_USER/EGO_PASSWORD not set in ego-deploy environment — skipping"
+            exit 0
+          fi
+          sudo apt-get install -y \
+            libjson-glib-dev libgnome-autoar-0-dev libsoup-3.0-dev gettext meson
           git clone --no-checkout --depth=1 \
             https://gitlab.gnome.org/GNOME/gnome-shell.git /tmp/gnome-shell-src
           cd /tmp/gnome-shell-src
@@ -72,4 +96,4 @@ jobs:
             --user="${EGO_USER}" \
             --password="${EGO_PASSWORD}" \
             --accept-tos \
-            "soft-brightness-plus@joelkitching.com.v${{ inputs.version }}.shell-extension.zip"
+            "${{ needs.build.outputs.zip-name }}"
