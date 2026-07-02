@@ -67,37 +67,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker layer cache
-        uses: actions/cache@v4
-        with:
-          path: /tmp/docker-cache
-          key: gnome49-${{ hashFiles('x11docker-gnome/gnome-shell-49.Dockerfile') }}
-
-      - name: Load cached image (if available)
-        run: |
-          if [ -f /tmp/docker-cache/gnome-shell-49.tar ]; then
-            docker load < /tmp/docker-cache/gnome-shell-49.tar
-          fi
-
-      - name: Build GNOME 49 test image
-        run: |
-          if ! docker image inspect gnome-shell-49 >/dev/null 2>&1; then
-            DOCKER_BUILDKIT=1 docker build \
-              -t gnome-shell-49 \
-              -f x11docker-gnome/gnome-shell-49.Dockerfile \
-              x11docker-gnome/
-          fi
-
-      - name: Save image to cache
-        run: |
-          mkdir -p /tmp/docker-cache
-          docker save gnome-shell-49 > /tmp/docker-cache/gnome-shell-49.tar
-
       - name: Download extension zip
         uses: actions/download-artifact@v4
         with:
           name: extension-zip
           path: build/
 
-      - name: Run GNOME 49 tests
-        run: bash x11docker-gnome/test-extension.sh 49 "$PWD"
+      - name: Build GNOME 49 test image
+        run: |
+          DOCKER_BUILDKIT=1 docker build \
+            -t sbp-e2e-gnome49 \
+            -f test/e2e/Dockerfile.gnome49 \
+            test/e2e/
+
+      - name: Run E2E tests (GNOME 49, wayland)
+        run: |
+          docker run --rm \
+            -v "$PWD/build/extension.zip:/ext.zip:ro" \
+            sbp-e2e-gnome49 \
+            /run-test.sh wayland
+
+      - name: Run E2E tests (GNOME 49, x11)
+        run: |
+          docker run --rm \
+            -v "$PWD/build/extension.zip:/ext.zip:ro" \
+            sbp-e2e-gnome49 \
+            /run-test.sh x11
