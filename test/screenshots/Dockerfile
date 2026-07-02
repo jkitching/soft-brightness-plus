@@ -1,0 +1,33 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gnome-shell \
+    gjs \
+    xvfb \
+    dbus-x11 \
+    dbus \
+    at-spi2-core \
+    xdotool \
+    imagemagick \
+    python3 \
+    python3-pyatspi \
+    libgl1-mesa-dri \
+    libglx-mesa0 \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -ms /bin/bash tester && \
+    mkdir -p /tmp/runtime-tester /tmp/.X11-unix && \
+    chown tester:tester /tmp/runtime-tester && \
+    chmod 700 /tmp/runtime-tester && \
+    chmod 1777 /tmp/.X11-unix
+
+COPY run-screenshots.sh find-slider.py fake-logind.js /
+RUN chmod +x /run-screenshots.sh
+
+USER tester
+ENV HOME=/home/tester
+ENV XDG_RUNTIME_DIR=/tmp/runtime-tester
+WORKDIR /home/tester
