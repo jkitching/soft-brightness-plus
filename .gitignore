@@ -4,3 +4,4 @@
 *.backup
 
 /build
+*.zip
