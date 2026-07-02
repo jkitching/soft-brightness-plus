@@ -737,8 +737,12 @@ class CursorManager {
         this._cursorActor = null;
         this._cursorWatcher = null;
         this._cursorWatch = null;
+        this._cursorInOverlay = false;
         this._cursorChangedConnection = null;
         this._cursorVisibilityChangedConnection = null;
+        this._idleMonitor = null;
+        this._cursorIdleWatchId = 0;
+        this._cursorActiveWatchId = 0;
 
         // Set/destroyed by _hideSystemCursor/_showSystemCursor
         this._cursorUnfocusInhibited = false;
@@ -846,6 +850,7 @@ class CursorManager {
 
         if (this._cursorWatch == null) {
             this._overlayManager.addActor(this._cursorActor);
+            this._cursorInOverlay = true;
             this._cursorChangedConnection = this._cursorTracker.connect(
                 'cursor-changed', this._updateMouseSprite.bind(this));
             this._cursorVisibilityChangedConnection = this._cursorTracker.connect(
@@ -856,17 +861,60 @@ class CursorManager {
 
             this._updateMouseSprite();
             this._updateMousePosition();
+
+            this._idleMonitor = Meta.IdleMonitor.get_core();
+            this._setupCursorIdleWatch();
         }
 
         this._hideSystemCursor();
     }
 
+    _setupCursorIdleWatch() {
+        // Pause the cursor polling loop when idle so the display can sleep.
+        // The software cursor render loop prevents DPMS from powering off the
+        // display; removing the watch while idle eliminates that inhibition.
+        const IDLE_TIMEOUT_MS = 30 * 1000;
+        this._cursorIdleWatchId = this._idleMonitor.add_idle_watch(IDLE_TIMEOUT_MS, () => {
+            this._cursorIdleWatchId = 0;
+            if (this._cursorWatch != null) {
+                this._cursorWatch.remove();
+                this._cursorWatch = null;
+                this._cursorActor.hide();
+            }
+            this._cursorActiveWatchId = this._idleMonitor.add_user_active_watch(() => {
+                this._cursorActiveWatchId = 0;
+                if (this._cursorWatcher != null && this._cursorWatch == null) {
+                    const interval = 1000 / 60;
+                    this._cursorWatch = this._cursorWatcher.addWatch(
+                        interval, this._updateMousePosition.bind(this));
+                    this._cursorActor.show();
+                    this._updateMousePosition();
+                    this._updateMouseSprite();
+                }
+                if (this._idleMonitor != null)
+                    this._setupCursorIdleWatch();
+            });
+        });
+    }
+
     _disableCloningMouse() {
-        if (this._cursorWatch != null) {
+        if (this._cursorIdleWatchId && this._idleMonitor) {
+            this._idleMonitor.remove_watch(this._cursorIdleWatchId);
+            this._cursorIdleWatchId = 0;
+        }
+        if (this._cursorActiveWatchId && this._idleMonitor) {
+            this._idleMonitor.remove_watch(this._cursorActiveWatchId);
+            this._cursorActiveWatchId = 0;
+        }
+        this._idleMonitor = null;
+
+        if (this._cursorInOverlay) {
             this._logger.log_debug('_stopCloningMouse()');
 
-            this._cursorWatch.remove();
-            this._cursorWatch = null;
+            if (this._cursorWatch != null) {
+                this._cursorWatch.remove();
+                this._cursorWatch = null;
+            }
 
             this._cursorTracker.disconnect(this._cursorChangedConnection);
             this._cursorChangedConnection = null;
@@ -875,6 +923,7 @@ class CursorManager {
             this._cursorVisibilityChangedConnection = null;
 
             this._overlayManager.removeActor(this._cursorActor);
+            this._cursorInOverlay = false;
         }
 
         this._showSystemCursor();
