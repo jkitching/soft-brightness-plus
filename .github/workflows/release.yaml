@@ -47,7 +47,7 @@ jobs:
             --notes "${NOTES}"
 
       - name: Upload to extensions.gnome.org
-        if: ${{ secrets.EGO_USER != '' && secrets.EGO_PASSWORD != '' }}
+        if: ${{ env.EGO_USER != '' }}
         env:
           EGO_USER: ${{ secrets.EGO_USER }}
           EGO_PASSWORD: ${{ secrets.EGO_PASSWORD }}
