@@ -104,26 +104,58 @@ jobs:
         env:
           EGO_USER: ${{ secrets.EGO_USER }}
           EGO_PASSWORD: ${{ secrets.EGO_PASSWORD }}
+          EGO_ZIP: ${{ needs.build.outputs.zip-name }}
         run: |
           if [ -z "${EGO_USER}" ] || [ -z "${EGO_PASSWORD}" ]; then
             echo "EGO_USER/EGO_PASSWORD not set in ego-deploy environment — skipping"
             exit 0
           fi
-          sudo apt-get install -y \
-            libjson-glib-dev libgnome-autoar-0-dev libsoup-3.0-dev gettext meson
-          git clone --no-checkout --depth=1 --branch gnome-49 \
-            https://gitlab.gnome.org/GNOME/gnome-shell.git /tmp/gnome-shell-src
-          cd /tmp/gnome-shell-src
-          git sparse-checkout init
-          git sparse-checkout set subprojects/extensions-tool
-          git checkout gnome-49
-          meson setup /tmp/ext-tool-build \
-            /tmp/gnome-shell-src/subprojects/extensions-tool \
-            -Dman=false
-          ninja -C /tmp/ext-tool-build
-          cd "$GITHUB_WORKSPACE"
-          /tmp/ext-tool-build/src/gnome-extensions upload \
-            --user="${EGO_USER}" \
-            --password="${EGO_PASSWORD}" \
-            --accept-tos \
-            "${{ needs.build.outputs.zip-name }}"
+          pip install requests --quiet
+          python3 <<'PYEOF'
+          import os, sys, requests
+
+          BASE = "https://extensions.gnome.org"
+          user = os.environ["EGO_USER"]
+          password = os.environ["EGO_PASSWORD"]
+          zip_path = os.environ["EGO_ZIP"]
+
+          s = requests.Session()
+
+          # Fetch login page to obtain CSRF token
+          r = s.get(f"{BASE}/accounts/login/")
+          r.raise_for_status()
+          csrf = s.cookies.get("csrftoken", "")
+          print(f"Fetched login page (status {r.status_code}), CSRF: {csrf[:8]}...")
+
+          # Log in
+          r = s.post(f"{BASE}/accounts/login/",
+              data={
+                  "csrfmiddlewaretoken": csrf,
+                  "username": user,
+                  "password": password,
+                  "next": "/",
+              },
+              headers={"Referer": f"{BASE}/accounts/login/"},
+              allow_redirects=True)
+          if "accounts/login" in r.url:
+              print(f"Login failed (still on login page): {r.status_code}")
+              print(r.text[:500])
+              sys.exit(1)
+          csrf = s.cookies.get("csrftoken", "")
+          print(f"Logged in (final URL: {r.url})")
+
+          # Upload zip
+          print(f"Uploading {zip_path}...")
+          with open(zip_path, "rb") as f:
+              r = s.post(f"{BASE}/extensions/upload/",
+                  files={"source": (os.path.basename(zip_path), f, "application/zip")},
+                  data={"csrfmiddlewaretoken": csrf},
+                  headers={"X-CSRFToken": csrf, "Referer": f"{BASE}/"},
+                  allow_redirects=True)
+
+          print(f"Upload response: {r.status_code}")
+          print(r.text[:1000])
+          if r.status_code not in (200, 201):
+              sys.exit(1)
+          print("Upload complete!")
+          PYEOF
