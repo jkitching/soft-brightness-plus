@@ -47,7 +47,7 @@ zip dist: all
 	@TMPDIR=$$(mktemp -d) && \
 	  cp $(JS_SOURCES) $(BUILD_DIR)/metadata.json $$TMPDIR/ && \
 	  mkdir -p $$TMPDIR/schemas $$TMPDIR/dbus-interfaces && \
-	  cp $(BUILD_DIR)/schemas/gschemas.compiled $(SCHEMA_XML) $$TMPDIR/schemas/ && \
+	  cp $(SCHEMA_XML) $$TMPDIR/schemas/ && \
 	  cp $(DBUS_XML) $$TMPDIR/dbus-interfaces/ && \
 	  cp -r $(BUILD_DIR)/locale $$TMPDIR/ && \
 	  (cd $$TMPDIR && zip -r $(CURDIR)/$(ZIP_NAME) .) && \
