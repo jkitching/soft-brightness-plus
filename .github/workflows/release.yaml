@@ -1,33 +1,47 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v50). Use to retrigger a failed release after fixing the issue.'
+        required: true
 
 jobs:
   # ── Build ────────────────────────────────────────────────────────────────────
-  # Runs automatically when a GitHub Release is published.
-  # Checks out the tagged commit, builds the zip from source, and attaches it
-  # to the release. The zip is also saved as an artifact for the deploy job.
+  # Triggered by a tag push (v*) or manually via workflow_dispatch.
+  # Checks out the tagged commit, builds the zip from source, extracts release
+  # notes from the README changelog, creates the GitHub release, and attaches
+  # the zip. Fails early if no changelog entry exists for the version.
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
       version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
       zip-name: ${{ steps.ver.outputs.zip-name }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Extract version from tag
+      - name: Resolve tag and version
         id: ver
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${TAG#v}"
           ZIP="soft-brightness-plus@joelkitching.com.v${VERSION}.shell-extension.zip"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "zip-name=${ZIP}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ver.outputs.tag }}
 
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y libglib2.0-bin gettext
@@ -35,13 +49,29 @@ jobs:
       - name: Build extension zip
         run: make zip VERSION=${{ steps.ver.outputs.version }}
 
-      - name: Attach zip to GitHub release
+      - name: Extract release notes from README
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          awk "/^### Version ${VERSION}$/{found=1; next} found && /^### /{exit} found{print}" \
+            README.md > /tmp/release-notes.md
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "ERROR: No '### Version ${VERSION}' section found in README.md."
+            echo "Add a changelog entry under '### Version ${VERSION}' before tagging."
+            exit 1
+          fi
+
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "$GITHUB_REF_NAME" \
-            "${{ steps.ver.outputs.zip-name }}" \
-            --clobber
+          TAG="${{ steps.ver.outputs.tag }}"
+          ZIP="${{ steps.ver.outputs.zip-name }}"
+          # Delete any existing release for this tag (idempotent retrigger via workflow_dispatch)
+          gh release delete "${TAG}" --yes 2>/dev/null || true
+          gh release create "${TAG}" \
+            --title "Version ${{ steps.ver.outputs.version }}" \
+            --notes-file /tmp/release-notes.md \
+            "${ZIP}"
 
       - name: Save zip as artifact for ego-deploy
         uses: actions/upload-artifact@v4

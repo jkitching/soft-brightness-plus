@@ -58,19 +58,26 @@ See commit `8218c77` for an example.
 ## GitHub Release Process
 
 ### Before releasing
-1. Update `README.md`: add a `### Version XX` changelog section above the previous version, and update the download link (~line 216) to the new zip filename.
-2. Commit and push to master. CI must be green.
+1. Update `README.md`: add a `### Version XX` changelog section above the previous version, and update the download link (~line 216) to the new zip filename. **The workflow will fail if this section is missing.**
+2. Commit the version bump (meson-gse.build, meson.build, README.md) and push to master. CI must be green.
 
 ### Triggering the release
-Go to GitHub → Releases → "Draft a new release":
-- **Tag:** `vXX` (create new tag on master)
-- **Title:** `Version XX`
-- **Notes:** changelog bullet points
-- Click **Publish release**
+Push a version tag:
+```bash
+git tag v50
+git push origin v50
+```
 
 The Release workflow fires automatically:
-1. **build** job: checks out the tagged commit, runs `make zip VERSION=XX`, attaches the zip to the release. Runs without approval.
-2. **ego-deploy** job: pauses for required-reviewer approval (you, via the "ego-deploy" GitHub Environment). Once approved, uploads the same zip to extensions.gnome.org using `EGO_USER`/`EGO_PASSWORD` stored in that environment.
+1. **build** job: checks out the tagged commit, builds the zip, extracts the `### Version XX` section from README.md as release notes (fails if not found), creates the GitHub release, attaches the zip.
+2. **ego-deploy** job: pauses for required-reviewer approval (you, via the "ego-deploy" GitHub Environment). Once approved, uploads the zip to extensions.gnome.org.
+
+### If the build fails (e.g. missing README section)
+Fix the issue, push to master, then retrigger without deleting the tag:
+```
+GitHub → Actions → Release → Run workflow → enter the tag (e.g. v50)
+```
+Or via CLI: `gh workflow run release.yaml -f tag=v50`
 
 ### One-time setup (ego-deploy environment)
 In repo Settings → Environments → ego-deploy:
