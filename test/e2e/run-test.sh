@@ -145,7 +145,7 @@ if [ "${MODE}" = "x11" ]; then
         -d org.gnome.Shell \
         -o /org/gnome/Shell/Screenshot \
         -m org.gnome.Shell.Screenshot.Screenshot \
-        --parameters "(false, false, '${SCREEN_BASE}')" 2>"${DBUS_ERR_FILE}" || true)
+        "(false, false, '${SCREEN_BASE}')" 2>"${DBUS_ERR_FILE}" || true)
     DBUS_ERR=$(cat "${DBUS_ERR_FILE}" 2>/dev/null | head -1 || echo "")
     rm -f "${DBUS_ERR_FILE}"
     if echo "${DBUS_RESULT}" | grep -q "true"; then
@@ -194,7 +194,7 @@ if [ "${MODE}" = "x11" ]; then
                 -d org.gnome.Shell \
                 -o /org/gnome/Shell/Screenshot \
                 -m org.gnome.Shell.Screenshot.Screenshot \
-                --parameters "(false, false, '${SCREEN_DIMMED}')" 2>/dev/null || echo "")
+                "(false, false, '${SCREEN_DIMMED}')" 2>/dev/null || echo "")
             if ! echo "${DBUS_RESULT2}" | grep -q "true"; then
                 echo "  WARN: dimmed D-Bus screenshot failed — skipping pixel checks"
                 PIXEL_CHECKS=false
