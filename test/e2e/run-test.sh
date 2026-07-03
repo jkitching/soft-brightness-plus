@@ -43,9 +43,23 @@ trap cleanup EXIT
 dbus-run-session -- bash -s "${MODE}" "${UUID}" "${LOG}" "${SETTLE}" <<'INNER'
 set -euo pipefail
 MODE="$1"; UUID="$2"; LOG="$3"; SETTLE="$4"
+EXT_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
+SCHEMA_DIR="${EXT_DIR}/schemas"
+SCHEMA_ID="org.gnome.shell.extensions.soft-brightness-plus"
 
 # Enable the extension before gnome-shell reads settings
 gsettings set org.gnome.shell enabled-extensions "['${UUID}']"
+
+# Enable extension debug logging so brightness changes appear in gnome-shell log
+GSETTINGS_SCHEMA_DIR="${SCHEMA_DIR}" \
+    gsettings set "${SCHEMA_ID}" debug true
+
+# Set a light grey background so brightness changes are visually measurable
+# (default GNOME desktop background is black which is already at min brightness)
+gsettings set org.gnome.desktop.background picture-options 'none'
+gsettings set org.gnome.desktop.background primary-color '#888888'
+gsettings set org.gnome.desktop.background secondary-color '#888888'
+gsettings set org.gnome.desktop.background color-shading-type 'solid'
 
 # Start a fake system D-Bus and register a logind stub on it.
 # gnome-shell connects to org.freedesktop.login1 on the system bus during
@@ -101,6 +115,76 @@ if grep -q "${UUID}" "${LOG}" 2>/dev/null; then
     echo "  INFO: extension UUID found in gnome-shell log"
 else
     echo "  INFO: extension UUID not in log (may still be active)"
+fi
+
+# Visual and programmatic checks (X11 mode only — Wayland headless has no framebuffer)
+if [ "${MODE}" = "x11" ]; then
+    SCREEN_BASE="/tmp/screen-base.png"
+    SCREEN_DIMMED="/tmp/screen-dimmed.png"
+
+    # Take baseline screenshot at brightness=1.0 (no dimming)
+    DISPLAY=:99 import -window root "${SCREEN_BASE}" 2>/dev/null || {
+        echo "  WARN: baseline screenshot failed — skipping visual checks"
+    }
+
+    if [ -f "${SCREEN_BASE}" ]; then
+        # Programmatic check A: trigger dimming and verify the extension logs it
+        GSETTINGS_SCHEMA_DIR="${SCHEMA_DIR}" \
+            gsettings set "${SCHEMA_ID}" current-brightness 0.5
+        sleep 3
+
+        # Check log for brightness change being applied
+        if grep -q "current-brightness=0.5\|_on_brightness_change.*0.5\|show(0.5\|show.*brightness.*0.5" "${LOG}" 2>/dev/null; then
+            echo "  PASS: extension log confirms brightness change was applied"
+        else
+            # Looser check: any log entry showing dimming was activated
+            if grep -q "OverlayManager\|GammaCurveEffect\|soft-brightness.*show\|_on_brightness" "${LOG}" 2>/dev/null; then
+                echo "  PASS: extension log shows overlay activity"
+            else
+                echo "  WARN: could not confirm brightness change in log"
+                grep -i "brightness\|overlay\|shader" "${LOG}" 2>/dev/null | tail -10 || true
+            fi
+        fi
+
+        # Take screenshot after dimming
+        DISPLAY=:99 import -window root "${SCREEN_DIMMED}" 2>/dev/null || {
+            echo "  WARN: dimmed screenshot failed — skipping visual pixel checks"
+        }
+
+        if [ -f "${SCREEN_DIMMED}" ]; then
+            # Visual check A: dimmed screenshot must NOT be solid colour.
+            # The shader-on-stage bug produces stddev ≈ 0 (all pixels same grey value).
+            # A real desktop with a panel has meaningful variation even at 50% brightness.
+            STDDEV=$(convert "${SCREEN_DIMMED}" -colorspace Gray -format "%[fx:std]" info: 2>/dev/null || echo "0")
+            echo "  Visual: dimmed screenshot stddev=${STDDEV}"
+            STDDEV_OK=$(awk "BEGIN { print (${STDDEV} > 0.01) ? \"yes\" : \"no\" }")
+            if [ "${STDDEV_OK}" = "no" ]; then
+                echo "  FAIL: solid-colour screen detected (stddev=${STDDEV} ≤ 0.01)"
+                echo "        This is the GammaCurveEffect-on-stage bug — shader ran on blank FBO"
+                kill "${GS_PID}" 2>/dev/null || true
+                exit 1
+            fi
+            echo "  PASS: screen has pixel variation — not solid colour"
+
+            # Visual check B: dimmed screenshot must be darker than the baseline.
+            # Skip if baseline is essentially black (< 0.05 mean) — no useful signal.
+            MEAN_BASE=$(convert "${SCREEN_BASE}" -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
+            MEAN_DIMMED=$(convert "${SCREEN_DIMMED}" -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
+            echo "  Visual: mean brightness baseline=${MEAN_BASE} dimmed=${MEAN_DIMMED}"
+            BASE_NEAR_BLACK=$(awk "BEGIN { print (${MEAN_BASE} < 0.05) ? \"yes\" : \"no\" }")
+            if [ "${BASE_NEAR_BLACK}" = "yes" ]; then
+                echo "  INFO: baseline is near-black — skipping mean comparison (no useful signal)"
+            else
+                DIMMED_OK=$(awk "BEGIN { print (${MEAN_DIMMED} < ${MEAN_BASE} * 0.90) ? \"yes\" : \"no\" }")
+                if [ "${DIMMED_OK}" = "no" ]; then
+                    echo "  FAIL: dimming not detected — mean(dimmed)=${MEAN_DIMMED} not sufficiently below mean(base)=${MEAN_BASE}"
+                    kill "${GS_PID}" 2>/dev/null || true
+                    exit 1
+                fi
+                echo "  PASS: screen is measurably dimmer at brightness=0.5"
+            fi
+        fi
+    fi
 fi
 
 kill "${GS_PID}" 2>/dev/null || true

@@ -13,6 +13,7 @@ RUN dnf -y copr enable frantisekz/GNOME-X11 && dnf -y update && \
         mesa-dri-drivers \
         mesa-libGL \
         unzip \
+        ImageMagick \
         && \
     dnf clean all
 
