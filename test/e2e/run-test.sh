@@ -16,6 +16,10 @@ mkdir -p "${EXT_DIR}"
 unzip -q /ext.zip -d "${EXT_DIR}"
 echo "  installed ${UUID}"
 
+# Compile schemas — the zip ships only the .xml (e.g.o. requirement);
+# we must compile locally before GNOME Shell tries to load them.
+glib-compile-schemas "${EXT_DIR}/schemas/"
+
 # Start Xvfb for X11 mode before the dbus session
 XVFB_PID=""
 if [ "${MODE}" = "x11" ]; then
