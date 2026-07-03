@@ -193,14 +193,22 @@ if [ "${MODE}" = "x11" ]; then
     fi
 
     # Shader check via Shell.Eval: verify GammaCurveEffect is applied to stage children.
-    # This is the definitive CI check — it runs inside gnome-shell's JS context and
-    # directly inspects whether the per-child shader approach actually attached effects.
+    # First run a simple eval to confirm Eval is enabled, then check the shader.
+    DEVTOOLS=$(gsettings get org.gnome.shell development-tools 2>/dev/null || echo "unknown")
+    echo "  INFO: development-tools=${DEVTOOLS}"
+    SIMPLE_EVAL=$(gdbus call --session \
+        -d org.gnome.Shell \
+        -o /org/gnome/Shell \
+        -m org.gnome.Shell.Eval \
+        "'1+1'" 2>/dev/null || echo "call-failed")
+    echo "  INFO: Eval '1+1': ${SIMPLE_EVAL}"
     SHADER_JS='global.stage.get_children().filter(function(c){return c.get_effect("soft-brightness-plus-shader") !== null}).length.toString()'
     SHADER_EVAL=$(gdbus call --session \
         -d org.gnome.Shell \
         -o /org/gnome/Shell \
         -m org.gnome.Shell.Eval \
         "'${SHADER_JS}'" 2>/dev/null || echo "")
+    echo "  INFO: shader Eval: ${SHADER_EVAL:-empty}"
     if echo "${SHADER_EVAL}" | grep -q "(true,"; then
         SHADER_COUNT=$(echo "${SHADER_EVAL}" | sed "s/(true, '\\([^']*\\)')/\\1/")
         if [ "${SHADER_COUNT}" -gt 0 ] 2>/dev/null; then
@@ -211,7 +219,7 @@ if [ "${MODE}" = "x11" ]; then
             exit 1
         fi
     else
-        echo "  INFO: Shell.Eval not available (result=${SHADER_EVAL:-empty}) — skipping shader effect check"
+        echo "  INFO: Shell.Eval not available — skipping shader effect check"
     fi
 
     if [ "${PIXEL_CHECKS}" = "true" ]; then
