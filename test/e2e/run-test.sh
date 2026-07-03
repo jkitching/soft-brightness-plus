@@ -128,20 +128,31 @@ if [ "${MODE}" = "x11" ]; then
     WIN_COUNT=$(DISPLAY=:99 xwininfo -root -children 2>/dev/null | grep -c '"' || echo "0")
     echo "  Info: ${WIN_COUNT} named windows on Xvfb :99"
 
+    # Diagnostic: check if org.gnome.Shell is registered on the session bus
+    GNOME_SHELL_ON_BUS=$(gdbus call --session \
+        -d org.freedesktop.DBus \
+        -o /org/freedesktop/DBus \
+        -m org.freedesktop.DBus.ListNames \
+        2>/dev/null | tr ',' '\n' | tr -d "' " | grep "^org.gnome.Shell$" || echo "")
+    echo "  INFO: org.gnome.Shell on D-Bus: ${GNOME_SHELL_ON_BUS:-not registered}"
+
     # Primary: GNOME Shell D-Bus screenshot API — captures the compositor overlay,
     # which is where gnome-shell actually renders its composited output in X11 mode.
     # The root window (XGetImage) shows only the raw X11 background underneath the
     # compositor, so it is always solid black. D-Bus goes through gnome-shell itself.
+    DBUS_ERR_FILE=/tmp/dbus-err-$$.txt
     DBUS_RESULT=$(gdbus call --session \
         -d org.gnome.Shell \
         -o /org/gnome/Shell/Screenshot \
         -m org.gnome.Shell.Screenshot.Screenshot \
-        --parameters "(false, false, '${SCREEN_BASE}')" 2>/dev/null || echo "")
+        --parameters "(false, false, '${SCREEN_BASE}')" 2>"${DBUS_ERR_FILE}" || true)
+    DBUS_ERR=$(cat "${DBUS_ERR_FILE}" 2>/dev/null | head -1 || echo "")
+    rm -f "${DBUS_ERR_FILE}"
     if echo "${DBUS_RESULT}" | grep -q "true"; then
         echo "  INFO: D-Bus screenshot captured baseline via gnome-shell compositor"
         DBUS_SHOT=true
     else
-        echo "  INFO: D-Bus screenshot unavailable (${DBUS_RESULT:-no response})"
+        echo "  INFO: D-Bus screenshot failed: result=${DBUS_RESULT:-empty} err=${DBUS_ERR:-none}"
         echo "  INFO: falling back to root window capture"
         DISPLAY=:99 import -window root "${SCREEN_BASE}" 2>/dev/null || true
     fi
