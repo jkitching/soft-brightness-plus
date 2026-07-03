@@ -124,30 +124,62 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
         {
             const group = new Adw.PreferencesGroup();
 
-            this.min_brightness_control = new Adw.SpinRow({
+            this.min_brightness_control = new Adw.ActionRow({
                 title: _('Minimum brightness (0..1):'),
                 subtitle: this._getDescription('min-brightness'),
-                digits: 2,
-                adjustment: new Gtk.Adjustment({
-                    lower: 0.0,
-                    upper: 1.0,
-                    step_increment: 0.01,
-                }),
             });
-            this._settings.bind('min-brightness', this.min_brightness_control, 'value', Gio.SettingsBindFlags.DEFAULT);
+            {
+                const scale = new Gtk.Scale({
+                    orientation: Gtk.Orientation.HORIZONTAL,
+                    adjustment: new Gtk.Adjustment({
+                        lower: 0.0, upper: 1.0,
+                        step_increment: 0.01, page_increment: 0.1,
+                        value: this._settings.get_double('min-brightness'),
+                    }),
+                    digits: 2,
+                    draw_value: true,
+                    value_pos: Gtk.PositionType.RIGHT,
+                    hexpand: true,
+                    width_request: 200,
+                    valign: Gtk.Align.CENTER,
+                });
+                scale.connect('value-changed', () => {
+                    this._settings.set_double('min-brightness', scale.get_value());
+                });
+                this._settings.connect('changed::min-brightness', () => {
+                    scale.set_value(this._settings.get_double('min-brightness'));
+                });
+                this.min_brightness_control.add_suffix(scale);
+            }
             group.add(this.min_brightness_control);
 
-            this.shader_gamma_control = new Adw.SpinRow({
+            this.shader_gamma_control = new Adw.ActionRow({
                 title: _('Dimming curve (1.0–4.0):'),
                 subtitle: this._getDescription('shader-gamma'),
-                digits: 1,
-                adjustment: new Gtk.Adjustment({
-                    lower: 1.0,
-                    upper: 4.0,
-                    step_increment: 0.1,
-                }),
             });
-            this._settings.bind('shader-gamma', this.shader_gamma_control, 'value', Gio.SettingsBindFlags.DEFAULT);
+            {
+                const scale = new Gtk.Scale({
+                    orientation: Gtk.Orientation.HORIZONTAL,
+                    adjustment: new Gtk.Adjustment({
+                        lower: 1.0, upper: 4.0,
+                        step_increment: 0.1, page_increment: 0.5,
+                        value: this._settings.get_double('shader-gamma'),
+                    }),
+                    digits: 1,
+                    draw_value: true,
+                    value_pos: Gtk.PositionType.RIGHT,
+                    hexpand: true,
+                    width_request: 200,
+                    valign: Gtk.Align.CENTER,
+                });
+                scale.connect('value-changed', () => {
+                    this._settings.set_double('shader-gamma', scale.get_value());
+                });
+                this._settings.connect('changed::shader-gamma', () => {
+                    scale.set_value(this._settings.get_double('shader-gamma'));
+                });
+                this.shader_gamma_control.add_suffix(scale);
+            }
             group.add(this.shader_gamma_control);
 
             this.clone_mouse_control = new Adw.SwitchRow({

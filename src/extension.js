@@ -164,13 +164,6 @@ export default class SoftBrightnessExtension extends Extension {
         this._indicatorManager.enable();
         this._screenshotManager.enable();
 
-        this._workspaceBrightness = new Map();
-        this._currentWorkspaceIndex = global.workspace_manager.get_active_workspace_index();
-        this._workspaceSwitchId = global.workspace_manager.connect(
-            'active-workspace-changed',
-            () => this._onWorkspaceChanged()
-        );
-
         this._enableSettingsMonitoring();
         this._enableKeyboardShortcuts();
 
@@ -185,12 +178,6 @@ export default class SoftBrightnessExtension extends Extension {
         this._logger.log_debug('disable(), session mode = ' + Main.sessionMode.currentMode);
 
         this._disableKeyboardShortcuts();
-
-        if (this._workspaceSwitchId) {
-            global.workspace_manager.disconnect(this._workspaceSwitchId);
-            this._workspaceSwitchId = null;
-        }
-        this._workspaceBrightness = null;
 
         this._monitorManager.disable();
         this._cursorManager.disable();
@@ -243,29 +230,6 @@ export default class SoftBrightnessExtension extends Extension {
         this._storeBrightnessLevel(clamped);
     }
 
-    _onWorkspaceChanged() {
-        if (!this._settings.get_boolean('per-workspace-brightness'))
-            return;
-
-        const newIndex = global.workspace_manager.get_active_workspace_index();
-        if (newIndex === this._currentWorkspaceIndex)
-            return;
-
-        // Save brightness for the workspace we're leaving
-        const currentBrightness = this._settings.get_double('current-brightness');
-        this._workspaceBrightness.set(this._currentWorkspaceIndex, currentBrightness);
-        this._currentWorkspaceIndex = newIndex;
-
-        // Restore saved brightness for the arriving workspace, if any
-        if (this._workspaceBrightness.has(newIndex)) {
-            const saved = this._workspaceBrightness.get(newIndex);
-            this._logger.log_debug(`_onWorkspaceChanged: restoring brightness=${saved} for workspace ${newIndex}`);
-            this._settings.set_double('current-brightness', saved);
-        } else {
-            this._logger.log_debug(`_onWorkspaceChanged: no saved brightness for workspace ${newIndex}, keeping ${currentBrightness}`);
-        }
-    }
-
     // Settings monitoring
     _enableSettingsMonitoring() {
         this._logger.log_debug('_enableSettingsMonitoring()');
@@ -278,12 +242,6 @@ export default class SoftBrightnessExtension extends Extension {
             'changed::use-backlight': () => this._on_brightness_change(),
             'changed::shader-gamma': () => this._on_brightness_change(),
             'changed::debug': () => this._on_debug_change(),
-            'changed::per-workspace-brightness': () => {
-                // When toggled off, clear any saved per-workspace levels so the
-                // current global brightness stays in effect on all workspaces.
-                if (!this._settings.get_boolean('per-workspace-brightness'))
-                    this._workspaceBrightness?.clear();
-            },
         }
         this._removeSettingsCallbacks = Object.entries(callbacks).map(
             ([name, fn]) => {
@@ -1018,10 +976,12 @@ class OverlayManager {
         this._settings = settings;
         this._monitorManager = monitorManager;
 
+        this._isWayland = Meta.is_wayland_compositor();
         this._actorGroup = null;
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
         this._shaderEffect = null;
+        this._alphaOverlay = null;
     }
 
     enable() {
@@ -1053,14 +1013,17 @@ class OverlayManager {
         global.stage.remove_child(this._actorGroup);
         this._actorGroup.destroy();
         this._actorGroup = null;
+        this._alphaOverlay = null;
     }
 
     resetSize() {
         this._actorGroup.set_size(global.screen_width, global.screen_height);
+        if (this._alphaOverlay)
+            this._alphaOverlay.set_size(global.screen_width, global.screen_height);
     }
 
     initialized() {
-        return this._shaderEffect !== null;
+        return this._isWayland ? this._shaderEffect !== null : this._alphaOverlay !== null;
     }
 
     addActor(actor) {
@@ -1078,16 +1041,30 @@ class OverlayManager {
 
     show(brightness) {
         this._logger.log_debug('show(' + brightness + ')');
-        const gammaK = this._settings.get_double('shader-gamma');
-        const monitorRects = this._getShaderMonitorRects();
-        if (!this._shaderEffect) {
-            this._logger.log_debug('show(): creating GammaCurveEffect (gamma=' + gammaK + ', rects=' + monitorRects.length + ')');
-            this._shaderEffect = new GammaCurveEffect(brightness, gammaK, monitorRects);
-            global.stage.add_effect_with_name('soft-brightness-plus-shader', this._shaderEffect);
+        if (this._isWayland) {
+            const gammaK = this._settings.get_double('shader-gamma');
+            const monitorRects = this._getShaderMonitorRects();
+            if (!this._shaderEffect) {
+                this._logger.log_debug('show(): creating GammaCurveEffect (gamma=' + gammaK + ', rects=' + monitorRects.length + ')');
+                this._shaderEffect = new GammaCurveEffect(brightness, gammaK, monitorRects);
+                global.stage.add_effect_with_name('soft-brightness-plus-shader', this._shaderEffect);
+            } else {
+                this._shaderEffect.update(brightness, gammaK, monitorRects);
+            }
+            this._shaderEffect.enabled = true;
         } else {
-            this._shaderEffect.update(brightness, gammaK, monitorRects);
+            // X11: Shell.GLSLEffect on global.stage is not supported on X11 and
+            // causes a gray/white screen or session crash. Use a full-screen rgba
+            // overlay instead (linear dimming; gamma curve not applied on X11).
+            if (!this._alphaOverlay) {
+                this._alphaOverlay = new St.Widget({ name: 'soft-brightness-plus-alpha-overlay' });
+                this._alphaOverlay.set_size(global.screen_width, global.screen_height);
+                this._actorGroup.insert_child_at_index(this._alphaOverlay, 0);
+            }
+            const alpha = 1.0 - brightness;
+            this._alphaOverlay.set_style('background-color: rgba(0,0,0,' + alpha.toFixed(4) + ');');
+            this._alphaOverlay.show();
         }
-        this._shaderEffect.enabled = true;
     }
 
     hide() {
@@ -1096,9 +1073,11 @@ class OverlayManager {
             global.stage.remove_effect(this._shaderEffect);
             this._shaderEffect = null;
         }
+        if (this._alphaOverlay)
+            this._alphaOverlay.hide();
     }
 
-    // Disable the shader for the duration of a screenshot without tearing down
+    // Disable the overlay for the duration of a screenshot without tearing down
     // the effect object. The post-capture hook calls show() to re-enable it.
     // Staying in compositing mode keeps the Clutter scene valid so that
     // clutter_stage_paint_to_content() (GS 46+ Wayland screenshot path)
@@ -1108,6 +1087,8 @@ class OverlayManager {
             this._logger.log_debug('hideForScreenshot(): disabling GammaCurveEffect');
             this._shaderEffect.enabled = false;
         }
+        if (this._alphaOverlay)
+            this._alphaOverlay.hide();
     }
 
     // Returns UV-space rects [{x,y,w,h}] for the monitors to be dimmed.
