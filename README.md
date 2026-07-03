@@ -213,18 +213,18 @@ Install directly from the [Gnome Shell Extensions
 site](https://extensions.gnome.org/extension/5943/soft-brightness-plus/).
 
 Or download the [zip
-file](https://github.com/jkitching/soft-brightness-plus/releases/download/v50/soft-brightness-plus@joelkitching.com.v50.shell-extension.zip)
+file](https://github.com/jkitching/soft-brightness-plus/releases/download/v51/soft-brightness-plus@joelkitching.com.v51.shell-extension.zip)
 from the GitHub [releases
 page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 
 ``` shell
-gnome-extensions install soft-brightness-plus@joelkitching.com.v50.shell-extension.zip
+gnome-extensions install soft-brightness-plus@joelkitching.com.v51.shell-extension.zip
 ```
 
 If you're upgrading from an existing installation, add `--force`:
 
 ``` shell
-gnome-extensions install --force soft-brightness-plus@joelkitching.com.v50.shell-extension.zip
+gnome-extensions install --force soft-brightness-plus@joelkitching.com.v51.shell-extension.zip
 ```
 
 ## Building from source
@@ -246,6 +246,20 @@ gnome-extensions install --force soft-brightness-plus@joelkitching.com.v50.shell
 - To build the extension zip files, run: `ninja -C build extension.zip`, the extension will be found under `build/extension.zip`.
 
 ## Changelog
+
+### Version 51
+#### July 3, 2026
+
+- Fix X11: GLSL shader effect on the root Clutter stage is
+  not supported on X11 and caused a gray/white screen and
+  session crashes. X11 sessions now use a full-screen rgba
+  overlay instead (linear dimming; gamma curve applies on
+  Wayland only).
+- Remove per-workspace brightness memory (was incorrectly
+  included in v50; was never an intended feature).
+- Preferences: replace +/- spin controls with sliders for
+  "Minimum brightness" and "Dimming curve" settings.
+- Fix cursor visibility restore fallback for GNOME 46-48.
 
 ### Version 50
 #### July 2, 2026
