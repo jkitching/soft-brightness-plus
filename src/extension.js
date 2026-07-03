@@ -65,7 +65,7 @@ const GammaCurveEffect = GObject.registerClass(
                 uniform vec4  u_monitor_rects[${MAX_SHADER_MONITORS}];
             `;
             const src = `
-                vec3 c = clamp(cogl_color_in.rgb, 0.0, 1.0);
+                vec3 c = clamp(cogl_color_out.rgb, 0.0, 1.0);
                 bool dim = u_monitor_count < 0.5;
                 if (!dim) {
                     vec2 uv = cogl_tex_coord_in[0].st;
@@ -82,7 +82,7 @@ const GammaCurveEffect = GObject.registerClass(
                 if (dim) {
                     c = u_brightness * (1.0 - pow(1.0 - c, vec3(u_gamma_k)));
                 }
-                cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_in.a);
+                cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_out.a);
             `;
             this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, declarations, src, false);
         }
