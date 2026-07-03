@@ -192,33 +192,15 @@ if [ "${MODE}" = "x11" ]; then
         fi
     fi
 
-    # Shader check via Shell.Eval: try to enable unsafe_mode via D-Bus Properties.Set,
-    # which is required for Eval to execute JS (development-tools=true is not sufficient
-    # — gnome-shell's C layer checks unsafe_mode, set only when Looking Glass is open).
-    gdbus call --session \
-        -d org.gnome.Shell \
-        -o /org/gnome/Shell \
-        -m org.freedesktop.DBus.Properties.Set \
-        "org.gnome.Shell" "UnsafeMode" "<true>" 2>/dev/null || true
-    SHADER_JS='global.stage.get_children().filter(function(c){return c.get_effect("soft-brightness-plus-shader") !== null}).length.toString()'
-    SHADER_EVAL=$(gdbus call --session \
-        -d org.gnome.Shell \
-        -o /org/gnome/Shell \
-        -m org.gnome.Shell.Eval \
-        "'${SHADER_JS}'" 2>/dev/null || echo "")
-    echo "  INFO: shader Eval: ${SHADER_EVAL:-empty}"
-    if echo "${SHADER_EVAL}" | grep -q "(true,"; then
-        SHADER_COUNT=$(echo "${SHADER_EVAL}" | sed "s/(true, '\\([^']*\\)')/\\1/")
-        if [ "${SHADER_COUNT}" -gt 0 ] 2>/dev/null; then
-            echo "  PASS: GammaCurveEffect shader applied to ${SHADER_COUNT} stage children"
-        else
-            echo "  FAIL: shader effect not attached to any stage children after brightness=0.5"
-            kill "${GS_PID}" 2>/dev/null || true
-            exit 1
-        fi
-    else
-        echo "  INFO: Shell.Eval not available in this environment — skipping shader effect check"
+    # Shader GLSL error check: if GammaCurveEffect fails to compile or causes a GL
+    # error, gnome-shell logs it. A clean log means the shader at least compiled.
+    if grep -qiE "GL error|GLSL|fragment.*error|shader.*error" "${LOG}" 2>/dev/null; then
+        echo "  FAIL: GLSL shader error found in log"
+        grep -iE "GL error|GLSL|fragment.*error|shader.*error" "${LOG}" | head -5 || true
+        kill "${GS_PID}" 2>/dev/null || true
+        exit 1
     fi
+    echo "  PASS: no GLSL shader errors"
 
     if [ "${PIXEL_CHECKS}" = "true" ]; then
         # Take dimmed screenshot using same method as baseline

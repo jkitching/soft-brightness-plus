@@ -970,12 +970,18 @@ class CursorManager {
 }
 
 // Gamma-curve shader lifecycle and cursor actor hosting.
-// Applies GammaCurveEffect to each direct child of global.stage individually.
 //
-// Shell.GLSLEffect on global.stage itself does NOT work — the stage is the
-// root framebuffer and cannot be redirected to a FBO.  Individual child
-// actors (window_group, uiGroup, etc.) CAN be FBO-redirected, so we apply
-// one GammaCurveEffect instance per stage child instead.
+// Shell.GLSLEffect (ClutterOffscreenEffect) on global.stage itself fails —
+// the stage is the root framebuffer and cannot be redirected to an FBO.
+//
+// Applying it to global.window_group (MetaWindowGroup) also fails — Mutter's
+// MetaWindowGroup has a custom paint() that renders directly to the compositor
+// framebuffer, bypassing Clutter's FBO mechanism, leaving the FBO blank (grey).
+//
+// Solution: skip global.window_group and instead apply the shader to each
+// MetaWindowActor from global.get_window_actors(). MetaWindowActors paint via
+// the standard Clutter path (texture upload + draw), so FBO redirection works.
+// Other stage children (background, UI groups) are still covered per-child.
 class OverlayManager {
     constructor(logger, settings, monitorManager) {
         this._logger = logger;
@@ -985,7 +991,8 @@ class OverlayManager {
         this._actorGroup = null;
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
-        // [{actor, effect}] — stage children currently carrying our shader
+        this._windowCreatedId = null;
+        // [{actor, effect, destroyId}] — actors currently carrying our shader
         this._shaderTargets = [];
         // null = not dimming; number = current brightness level
         this._currentBrightness = null;
@@ -1007,9 +1014,21 @@ class OverlayManager {
             clutterContainer ? 'actor-removed' : 'child-removed',
             this._onStageChildRemoved.bind(this),
         );
+
+        // Apply shader to new windows as they are created.
+        this._windowCreatedId = global.display.connect('window-created', (_display, win) => {
+            if (this._currentBrightness === null) return;
+            const actor = win.get_compositor_private();
+            if (actor)
+                this._applyShaderToActor(actor);
+        });
     }
 
     disable() {
+        if (this._windowCreatedId) {
+            global.display.disconnect(this._windowCreatedId);
+            this._windowCreatedId = null;
+        }
         global.stage.disconnect(this._actorAddedConnection);
         global.stage.disconnect(this._actorRemovedConnection);
         this._actorAddedConnection = null;
@@ -1041,7 +1060,10 @@ class OverlayManager {
 
     _onStageChildAdded(_stage, child) {
         this._actorGroup.get_parent().set_child_above_sibling(this._actorGroup, null);
-        if (child !== this._actorGroup && this._currentBrightness !== null) {
+        // Skip MetaWindowGroup — it cannot be FBO-redirected. Window content is
+        // covered by applying the shader to MetaWindowActors via window-created.
+        if (child !== this._actorGroup && child !== global.window_group &&
+            this._currentBrightness !== null) {
             this._applyShaderToActor(child);
         }
     }
@@ -1049,9 +1071,16 @@ class OverlayManager {
     _onStageChildRemoved(_stage, child) {
         if (this._actorGroup.get_parent())
             this._actorGroup.get_parent().set_child_above_sibling(this._actorGroup, null);
-        const idx = this._shaderTargets.findIndex(t => t.actor === child);
+        this._removeActorFromTargets(child);
+    }
+
+    _removeActorFromTargets(actor) {
+        const idx = this._shaderTargets.findIndex(t => t.actor === actor);
         if (idx !== -1) {
             const [removed] = this._shaderTargets.splice(idx, 1);
+            if (removed.destroyId) {
+                try { actor.disconnect(removed.destroyId); } catch (_e) {}
+            }
             try { removed.actor.remove_effect(removed.effect); } catch (_e) {}
         }
     }
@@ -1061,7 +1090,8 @@ class OverlayManager {
         const monitorRects = this._getShaderMonitorRects();
         const effect = new GammaCurveEffect(this._currentBrightness, gammaK, monitorRects);
         actor.add_effect_with_name('soft-brightness-plus-shader', effect);
-        this._shaderTargets.push({ actor, effect });
+        const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
+        this._shaderTargets.push({ actor, effect, destroyId });
         this._logger.log_debug('_applyShaderToActor: ' + (actor.name || String(actor)));
     }
 
@@ -1072,33 +1102,48 @@ class OverlayManager {
         const gammaK = this._settings.get_double('shader-gamma');
         const monitorRects = this._getShaderMonitorRects();
 
-        const targets = global.stage.get_children().filter(c => c !== this._actorGroup);
-        const existingMap = new Map(this._shaderTargets.map(t => [t.actor, t.effect]));
+        // Build target list: stage children minus actorGroup and MetaWindowGroup,
+        // plus all MetaWindowActors (individual windows are FBO-redirectable).
+        const stageTargets = global.stage.get_children().filter(c =>
+            c !== this._actorGroup && c !== global.window_group
+        );
+        const windowActors = global.get_window_actors ? global.get_window_actors() : [];
+        const targets = [...stageTargets, ...windowActors];
 
-        // Remove effects from actors no longer in stage children list
-        for (const { actor, effect } of this._shaderTargets) {
+        const existingMap = new Map(this._shaderTargets.map(t => [t.actor, t.effect]));
+        const existingDestroyMap = new Map(this._shaderTargets.map(t => [t.actor, t.destroyId]));
+
+        // Remove effects from actors no longer in target list
+        for (const { actor, effect, destroyId } of this._shaderTargets) {
             if (!targets.includes(actor)) {
+                if (destroyId) {
+                    try { actor.disconnect(destroyId); } catch (_e) {}
+                }
                 try { actor.remove_effect(effect); } catch (_e) {}
             }
         }
 
-        // Apply or update shader on each current stage child
+        // Apply or update shader on each current target
         this._shaderTargets = targets.map(actor => {
             if (existingMap.has(actor)) {
                 const effect = existingMap.get(actor);
                 effect.update(brightness, gammaK, monitorRects);
                 effect.enabled = true;
-                return { actor, effect };
+                return { actor, effect, destroyId: existingDestroyMap.get(actor) };
             }
             const effect = new GammaCurveEffect(brightness, gammaK, monitorRects);
             actor.add_effect_with_name('soft-brightness-plus-shader', effect);
-            return { actor, effect };
+            const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
+            return { actor, effect, destroyId };
         });
     }
 
     hide() {
         this._currentBrightness = null;
-        for (const { actor, effect } of this._shaderTargets) {
+        for (const { actor, effect, destroyId } of this._shaderTargets) {
+            if (destroyId) {
+                try { actor.disconnect(destroyId); } catch (_e) {}
+            }
             try { actor.remove_effect(effect); } catch (_e) {}
         }
         this._shaderTargets = [];
