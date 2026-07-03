@@ -192,16 +192,14 @@ if [ "${MODE}" = "x11" ]; then
         fi
     fi
 
-    # Shader check via Shell.Eval: verify GammaCurveEffect is applied to stage children.
-    # First run a simple eval to confirm Eval is enabled, then check the shader.
-    DEVTOOLS=$(gsettings get org.gnome.shell development-tools 2>/dev/null || echo "unknown")
-    echo "  INFO: development-tools=${DEVTOOLS}"
-    SIMPLE_EVAL=$(gdbus call --session \
+    # Shader check via Shell.Eval: try to enable unsafe_mode via D-Bus Properties.Set,
+    # which is required for Eval to execute JS (development-tools=true is not sufficient
+    # — gnome-shell's C layer checks unsafe_mode, set only when Looking Glass is open).
+    gdbus call --session \
         -d org.gnome.Shell \
         -o /org/gnome/Shell \
-        -m org.gnome.Shell.Eval \
-        "'1+1'" 2>/dev/null || echo "call-failed")
-    echo "  INFO: Eval '1+1': ${SIMPLE_EVAL}"
+        -m org.freedesktop.DBus.Properties.Set \
+        "org.gnome.Shell" "UnsafeMode" "<true>" 2>/dev/null || true
     SHADER_JS='global.stage.get_children().filter(function(c){return c.get_effect("soft-brightness-plus-shader") !== null}).length.toString()'
     SHADER_EVAL=$(gdbus call --session \
         -d org.gnome.Shell \
@@ -219,7 +217,7 @@ if [ "${MODE}" = "x11" ]; then
             exit 1
         fi
     else
-        echo "  INFO: Shell.Eval not available — skipping shader effect check"
+        echo "  INFO: Shell.Eval not available in this environment — skipping shader effect check"
     fi
 
     if [ "${PIXEL_CHECKS}" = "true" ]; then
