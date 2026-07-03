@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglx-mesa0 \
     unzip \
     imagemagick \
+    x11-utils \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -ms /bin/bash tester && \

@@ -122,17 +122,39 @@ if [ "${MODE}" = "x11" ]; then
     SCREEN_BASE="/tmp/screen-base.png"
     SCREEN_DIMMED="/tmp/screen-dimmed.png"
     PIXEL_CHECKS=false
+    DBUS_SHOT=false
 
-    # Take baseline screenshot at brightness=1.0 (no dimming)
-    if DISPLAY=:99 import -window root "${SCREEN_BASE}" 2>/dev/null; then
+    # Diagnostic: list windows on Xvfb to understand the rendering environment
+    WIN_COUNT=$(DISPLAY=:99 xwininfo -root -children 2>/dev/null | grep -c '"' || echo "0")
+    echo "  Info: ${WIN_COUNT} named windows on Xvfb :99"
+
+    # Primary: GNOME Shell D-Bus screenshot API — captures the compositor overlay,
+    # which is where gnome-shell actually renders its composited output in X11 mode.
+    # The root window (XGetImage) shows only the raw X11 background underneath the
+    # compositor, so it is always solid black. D-Bus goes through gnome-shell itself.
+    DBUS_RESULT=$(gdbus call --session \
+        -d org.gnome.Shell \
+        -o /org/gnome/Shell/Screenshot \
+        -m org.gnome.Shell.Screenshot.Screenshot \
+        --parameters "(false, false, '${SCREEN_BASE}')" 2>/dev/null || echo "")
+    if echo "${DBUS_RESULT}" | grep -q "true"; then
+        echo "  INFO: D-Bus screenshot captured baseline via gnome-shell compositor"
+        DBUS_SHOT=true
+    else
+        echo "  INFO: D-Bus screenshot unavailable (${DBUS_RESULT:-no response})"
+        echo "  INFO: falling back to root window capture"
+        DISPLAY=:99 import -window root "${SCREEN_BASE}" 2>/dev/null || true
+    fi
+
+    if [ -f "${SCREEN_BASE}" ]; then
         STDDEV_BASE=$(convert "${SCREEN_BASE}" -colorspace Gray -format "%[fx:std]" info: 2>/dev/null || echo "0")
         echo "  Visual: baseline stddev=${STDDEV_BASE}"
         BASE_RENDERS=$(awk "BEGIN { print (${STDDEV_BASE} > 0.01) ? \"yes\" : \"no\" }")
         if [ "${BASE_RENDERS}" = "yes" ]; then
             PIXEL_CHECKS=true
         else
-            echo "  WARN: baseline is solid colour (stddev=${STDDEV_BASE}) — gnome-shell not rendering to Xvfb"
-            echo "  INFO: pixel checks skipped; this is an environment limitation, not the shader bug"
+            echo "  WARN: baseline is solid — gnome-shell compositor output not capturable in this environment"
+            echo "  INFO: pixel checks skipped (environment limitation, not a shader bug)"
         fi
     else
         echo "  WARN: baseline screenshot failed — skipping pixel checks"
@@ -155,22 +177,34 @@ if [ "${MODE}" = "x11" ]; then
     fi
 
     if [ "${PIXEL_CHECKS}" = "true" ]; then
-        # Take screenshot after dimming
-        if ! DISPLAY=:99 import -window root "${SCREEN_DIMMED}" 2>/dev/null; then
-            echo "  WARN: dimmed screenshot failed — skipping pixel checks"
-            PIXEL_CHECKS=false
+        # Take dimmed screenshot using same method as baseline
+        if [ "${DBUS_SHOT}" = "true" ]; then
+            DBUS_RESULT2=$(gdbus call --session \
+                -d org.gnome.Shell \
+                -o /org/gnome/Shell/Screenshot \
+                -m org.gnome.Shell.Screenshot.Screenshot \
+                --parameters "(false, false, '${SCREEN_DIMMED}')" 2>/dev/null || echo "")
+            if ! echo "${DBUS_RESULT2}" | grep -q "true"; then
+                echo "  WARN: dimmed D-Bus screenshot failed — skipping pixel checks"
+                PIXEL_CHECKS=false
+            fi
+        else
+            if ! DISPLAY=:99 import -window root "${SCREEN_DIMMED}" 2>/dev/null; then
+                echo "  WARN: dimmed screenshot failed — skipping pixel checks"
+                PIXEL_CHECKS=false
+            fi
         fi
     fi
 
     if [ "${PIXEL_CHECKS}" = "true" ] && [ -f "${SCREEN_DIMMED}" ]; then
         # Visual check A: dimmed screenshot must NOT be solid colour.
         # The shader-on-stage bug produces stddev ≈ 0 (all pixels same grey value).
-        # Only meaningful if the baseline showed variation (environment renders visually).
+        # Only reached when baseline already showed variation (environment renders).
         STDDEV=$(convert "${SCREEN_DIMMED}" -colorspace Gray -format "%[fx:std]" info: 2>/dev/null || echo "0")
         echo "  Visual: dimmed screenshot stddev=${STDDEV}"
         STDDEV_OK=$(awk "BEGIN { print (${STDDEV} > 0.01) ? \"yes\" : \"no\" }")
         if [ "${STDDEV_OK}" = "no" ]; then
-            echo "  FAIL: solid-colour screen detected (stddev=${STDDEV} ≤ 0.01)"
+            echo "  FAIL: solid-colour screen after dimming (stddev=${STDDEV} ≤ 0.01)"
             echo "        Baseline had variation but dimmed is solid — GammaCurveEffect shader bug"
             kill "${GS_PID}" 2>/dev/null || true
             exit 1
@@ -183,7 +217,7 @@ if [ "${MODE}" = "x11" ]; then
         echo "  Visual: mean brightness baseline=${MEAN_BASE} dimmed=${MEAN_DIMMED}"
         DIMMED_OK=$(awk "BEGIN { print (${MEAN_DIMMED} < ${MEAN_BASE} * 0.90) ? \"yes\" : \"no\" }")
         if [ "${DIMMED_OK}" = "no" ]; then
-            echo "  FAIL: dimming not detected — mean(dimmed)=${MEAN_DIMMED} not sufficiently below mean(base)=${MEAN_BASE}"
+            echo "  FAIL: dimming not detected — mean(dimmed)=${MEAN_DIMMED} not below mean(base)=${MEAN_BASE}"
             kill "${GS_PID}" 2>/dev/null || true
             exit 1
         fi
