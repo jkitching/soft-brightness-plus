@@ -269,9 +269,11 @@ export default class SoftBrightnessExtension extends Extension {
         }
         if (curBrightness >= 1) {
             this._overlayManager.hide();
+            this._cursorManager.setDimFactor(1.0);
             this._cursorManager.setActive(false);
         } else {
             this._overlayManager.show(curBrightness);
+            this._cursorManager.setDimFactor(curBrightness);
             this._cursorManager.setActive(this._overlayManager.initialized());
         }
     }
@@ -683,6 +685,10 @@ class CursorManager {
         // State trackers
         this._active = false;
         this._cloned = false;
+        // Multiplier applied to the cloned cursor texture (1 = no dimming).
+        // For a white pixel the gamma curve reduces to out = brightness, so
+        // a flat multiply by brightness matches the shader-dimmed screen.
+        this._dimFactor = 1.0;
 
         // Set/destroyed by enable/disable
         this._enableTimeoutId = null;
@@ -709,6 +715,12 @@ class CursorManager {
 
     setChangeHook(fn) {
         this._changeHookFn = fn;
+    }
+
+    setDimFactor(factor) {
+        this._dimFactor = factor;
+        if (this._cursorSprite !== null && this._cursorSprite.content)
+            this._cursorSprite.content.dimFactor = factor;
     }
 
     enable() {
@@ -799,20 +811,24 @@ class CursorManager {
           ? global.backend.get_cursor_tracker()
           : Meta.CursorTracker.get_for_display(global.display);
 
-        this._cursorSprite = new Clutter.Actor({ request_mode: Clutter.RequestMode.CONTENT_SIZE });
-        this._cursorSprite.content = new MouseSpriteContent();
-
-        this._cursorActor = new Clutter.Actor();
-        this._cursorActor.add_child(this._cursorSprite);
-        this._cursorWatcher = PointerWatcher.getPointerWatcher();
-
         if (this._cursorWatch == null) {
+            // Create the clone actors only when actually starting a watch;
+            // creating them unconditionally leaks stale cursor actors
+            // ("cursor trails") if this method runs twice.
+            this._cursorSprite = new Clutter.Actor({ request_mode: Clutter.RequestMode.CONTENT_SIZE });
+            this._cursorSprite.content = new MouseSpriteContent();
+            this._cursorSprite.content.dimFactor = this._dimFactor;
+
+            this._cursorActor = new Clutter.Actor();
+            this._cursorActor.add_child(this._cursorSprite);
+            this._cursorWatcher = PointerWatcher.getPointerWatcher();
+
             this._overlayManager.addActor(this._cursorActor);
             this._cursorInOverlay = true;
             this._cursorChangedConnection = this._cursorTracker.connect(
                 'cursor-changed', this._updateMouseSprite.bind(this));
             this._cursorVisibilityChangedConnection = this._cursorTracker.connect(
-                'visibility-changed', this._updateMouseSprite.bind(this));
+                'visibility-changed', this._onCursorVisibilityChanged.bind(this));
             const interval = 1000 / 60;
             this._logger.log_debug('_startCloningMouse(): watch interval = ' + interval + ' ms');
             this._cursorWatch = this._cursorWatcher.addWatch(interval, this._updateMousePosition.bind(this));
@@ -820,7 +836,11 @@ class CursorManager {
             this._updateMouseSprite();
             this._updateMousePosition();
 
-            this._idleMonitor = Meta.IdleMonitor.get_core();
+            // In GS 49, Meta.IdleMonitor.get_core() was removed in favor of
+            // global.backend.get_core_idle_monitor().
+            this._idleMonitor = global.backend.get_core_idle_monitor !== undefined
+                ? global.backend.get_core_idle_monitor()
+                : Meta.IdleMonitor.get_core();
             this._setupCursorIdleWatch();
         }
 
@@ -904,6 +924,22 @@ class CursorManager {
     _updateMousePosition() {
         const [x, y] = global.get_pointer();
         this._cursorActor.set_position(x, y);
+    }
+
+    _onCursorVisibilityChanged() {
+        this._updateMouseSprite();
+
+        // Mutter re-shows the system cursor on its own during grabs, window
+        // resizes and VT switches, dropping our inhibition.  If we are
+        // supposed to be hiding it, re-assert the inhibition, otherwise the
+        // real cursor is drawn on top of the clone (double cursor).
+        if (this._cursorHidden &&
+            typeof this._cursorTracker.get_pointer_visible === 'function' &&
+            this._cursorTracker.get_pointer_visible()) {
+            this._logger.log_debug('_onCursorVisibilityChanged(): system cursor re-appeared, re-hiding');
+            this._cursorHidden = false;
+            this._hideSystemCursor();
+        }
     }
 
     _updateMouseSprite() {
@@ -996,6 +1032,8 @@ class OverlayManager {
         this._shaderTargets = [];
         // null = not dimming; number = current brightness level
         this._currentBrightness = null;
+        // Cache of the last-applied show() parameters, for redundancy skips
+        this._lastShowSig = null;
     }
 
     enable() {
@@ -1096,7 +1134,6 @@ class OverlayManager {
     }
 
     show(brightness) {
-        this._logger.log_debug('show(' + brightness + ')');
         this._currentBrightness = brightness;
 
         const gammaK = this._settings.get_double('shader-gamma');
@@ -1104,11 +1141,27 @@ class OverlayManager {
 
         // Build target list: stage children minus actorGroup and MetaWindowGroup,
         // plus all MetaWindowActors (individual windows are FBO-redirectable).
+        // The cursor-clone group (_actorGroup) must NOT carry the shader:
+        // FBO-redirecting actors that move every frame (the cursor clone)
+        // leaves stale trails behind.  The clone is dimmed via texture color
+        // modulation in MouseSpriteContent instead (see CursorManager).
         const stageTargets = global.stage.get_children().filter(c =>
             c !== this._actorGroup && c !== global.window_group
         );
         const windowActors = global.get_window_actors ? global.get_window_actors() : [];
         const targets = [...stageTargets, ...windowActors];
+
+        // Settings-change storms (e.g. prefs rewriting a key) re-invoke show()
+        // with identical parameters many times per second; skip when nothing
+        // would change.
+        const sig = brightness + '/' + gammaK + '/' + JSON.stringify(monitorRects);
+        if (sig === this._lastShowSig &&
+            this._shaderTargets.length === targets.length &&
+            this._shaderTargets.every((t, i) => t.actor === targets[i] && t.effect.enabled)) {
+            return;
+        }
+        this._lastShowSig = sig;
+        this._logger.log_debug('show(' + brightness + ')');
 
         const existingMap = new Map(this._shaderTargets.map(t => [t.actor, t.effect]));
         const existingDestroyMap = new Map(this._shaderTargets.map(t => [t.actor, t.destroyId]));
@@ -1140,6 +1193,7 @@ class OverlayManager {
 
     hide() {
         this._currentBrightness = null;
+        this._lastShowSig = null;
         for (const { actor, effect, destroyId } of this._shaderTargets) {
             if (destroyId) {
                 try { actor.disconnect(destroyId); } catch (_e) {}

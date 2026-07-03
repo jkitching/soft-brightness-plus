@@ -15,15 +15,31 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import Clutter from 'gi://Clutter';
+import Cogl from 'gi://Cogl';
 import GObject from 'gi://GObject';
 
-// Copied almost verbatim from ui/magnifier.js.
+// Copied almost verbatim from ui/magnifier.js, plus dimFactor support:
+// the cloned cursor is dimmed by modulating the texture color rather than
+// with a shader effect — offscreen effects on an actor that moves every
+// frame leave stale trails behind.
 export const MouseSpriteContent = GObject.registerClass({
     Implements: [Clutter.Content],
 }, class MouseSpriteContent extends GObject.Object {
     _init() {
         super._init();
         this._texture = null;
+        this._dimFactor = 1.0;
+    }
+
+    get dimFactor() {
+        return this._dimFactor;
+    }
+
+    set dimFactor(factor) {
+        if (this._dimFactor !== factor) {
+            this._dimFactor = factor;
+            this.invalidate();
+        }
     }
 
     vfunc_get_preferred_size() {
@@ -37,9 +53,18 @@ export const MouseSpriteContent = GObject.registerClass({
         if (!this._texture)
             return;
 
+        let color = null;
+        if (this._dimFactor < 1.0) {
+            const v = Math.round(this._dimFactor * 255);
+            // In GS 47, Clutter.Color was replaced by Cogl.Color.
+            color = Clutter.Color !== undefined
+                ? new Clutter.Color({red: v, green: v, blue: v, alpha: 255})
+                : new Cogl.Color({red: v, green: v, blue: v, alpha: 255});
+        }
+
         let [minFilter, magFilter] = actor.get_content_scaling_filters();
         let textureNode = new Clutter.TextureNode(this._texture,
-            null, minFilter, magFilter);
+            color, minFilter, magFilter);
         textureNode.set_name('SoftBrightnessPlusMouseSpriteContent');
         node.add_child(textureNode);
 
