@@ -140,12 +140,13 @@ if [ "${MODE}" = "x11" ]; then
     # which is where gnome-shell actually renders its composited output in X11 mode.
     # The root window (XGetImage) shows only the raw X11 background underneath the
     # compositor, so it is always solid black. D-Bus goes through gnome-shell itself.
+    # Note: gdbus call takes individual GVariant positional args, not a tuple wrapper.
     DBUS_ERR_FILE=/tmp/dbus-err-$$.txt
     DBUS_RESULT=$(gdbus call --session \
         -d org.gnome.Shell \
         -o /org/gnome/Shell/Screenshot \
         -m org.gnome.Shell.Screenshot.Screenshot \
-        "(false, false, '${SCREEN_BASE}')" 2>"${DBUS_ERR_FILE}" || true)
+        "false" "false" "'${SCREEN_BASE}'" 2>"${DBUS_ERR_FILE}" || true)
     DBUS_ERR=$(cat "${DBUS_ERR_FILE}" 2>/dev/null | head -1 || echo "")
     rm -f "${DBUS_ERR_FILE}"
     if echo "${DBUS_RESULT}" | grep -q "true"; then
@@ -187,6 +188,28 @@ if [ "${MODE}" = "x11" ]; then
         fi
     fi
 
+    # Shader check via Shell.Eval: verify GammaCurveEffect is applied to stage children.
+    # This is the definitive CI check — it runs inside gnome-shell's JS context and
+    # directly inspects whether the per-child shader approach actually attached effects.
+    SHADER_JS='global.stage.get_children().filter(function(c){return c.get_effect("soft-brightness-plus-shader") !== null}).length.toString()'
+    SHADER_EVAL=$(gdbus call --session \
+        -d org.gnome.Shell \
+        -o /org/gnome/Shell \
+        -m org.gnome.Shell.Eval \
+        "'${SHADER_JS}'" 2>/dev/null || echo "")
+    if echo "${SHADER_EVAL}" | grep -q "(true,"; then
+        SHADER_COUNT=$(echo "${SHADER_EVAL}" | sed "s/(true, '\\([^']*\\)')/\\1/")
+        if [ "${SHADER_COUNT}" -gt 0 ] 2>/dev/null; then
+            echo "  PASS: GammaCurveEffect shader applied to ${SHADER_COUNT} stage children"
+        else
+            echo "  FAIL: shader effect not attached to any stage children after brightness=0.5"
+            kill "${GS_PID}" 2>/dev/null || true
+            exit 1
+        fi
+    else
+        echo "  INFO: Shell.Eval not available (result=${SHADER_EVAL:-empty}) — skipping shader effect check"
+    fi
+
     if [ "${PIXEL_CHECKS}" = "true" ]; then
         # Take dimmed screenshot using same method as baseline
         if [ "${DBUS_SHOT}" = "true" ]; then
@@ -194,7 +217,7 @@ if [ "${MODE}" = "x11" ]; then
                 -d org.gnome.Shell \
                 -o /org/gnome/Shell/Screenshot \
                 -m org.gnome.Shell.Screenshot.Screenshot \
-                "(false, false, '${SCREEN_DIMMED}')" 2>/dev/null || echo "")
+                "false" "false" "'${SCREEN_DIMMED}'" 2>/dev/null || echo "")
             if ! echo "${DBUS_RESULT2}" | grep -q "true"; then
                 echo "  WARN: dimmed D-Bus screenshot failed — skipping pixel checks"
                 PIXEL_CHECKS=false
