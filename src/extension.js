@@ -20,6 +20,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PointerWatcher from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
 import {QuickSlider} from 'resource:///org/gnome/shell/ui/quickSettings.js';
 import Clutter from 'gi://Clutter';
+import Cogl from 'gi://Cogl';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
@@ -33,6 +34,81 @@ import * as Logger from './logger.js';
 import * as Utils from './utils.js';
 import { MouseSpriteContent } from './cursor.js';
 
+// Gamma-curve GLSL dimming effect.
+// Maps: out = brightness * (1 - (1 - in)^gamma_k)
+//   gamma_k = 1  →  identical to linear overlay
+//   gamma_k > 1  →  darks preserved better; highlights compress faster
+//
+// monitorRects: [{x,y,w,h}] in UV [0,1] actor-local space.
+//   Empty (length 0) → dim the entire actor.
+//   Non-empty → only dim pixels inside those rects (for built-in/external targeting).
+const MAX_SHADER_MONITORS = 4;
+
+const GammaCurveEffect = GObject.registerClass(
+    class GammaCurveEffect extends Shell.GLSLEffect {
+        _init(brightness, gammaK, monitorRects) {
+            super._init();
+            this._brightnessLoc = this.get_uniform_location('u_brightness');
+            this._gammaKLoc = this.get_uniform_location('u_gamma_k');
+            this._monitorCountLoc = this.get_uniform_location('u_monitor_count');
+            this._monitorRectsLoc = this.get_uniform_location('u_monitor_rects');
+            this._brightness = brightness;
+            this._gammaK = gammaK;
+            this._monitorRects = monitorRects || [];
+        }
+
+        vfunc_build_pipeline() {
+            const declarations = `
+                uniform float u_brightness;
+                uniform float u_gamma_k;
+                uniform float u_monitor_count;
+                uniform vec4  u_monitor_rects[${MAX_SHADER_MONITORS}];
+            `;
+            const src = `
+                vec3 c = clamp(cogl_color_in.rgb, 0.0, 1.0);
+                bool dim = u_monitor_count < 0.5;
+                if (!dim) {
+                    vec2 uv = cogl_tex_coord_in[0].st;
+                    for (int i = 0; i < ${MAX_SHADER_MONITORS}; i++) {
+                        if (float(i) >= u_monitor_count) break;
+                        vec4 r = u_monitor_rects[i];
+                        if (uv.x >= r.x && uv.x < r.x + r.z &&
+                            uv.y >= r.y && uv.y < r.y + r.w) {
+                            dim = true;
+                            break;
+                        }
+                    }
+                }
+                if (dim) {
+                    c = u_brightness * (1.0 - pow(1.0 - c, vec3(u_gamma_k)));
+                }
+                cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_in.a);
+            `;
+            this.add_glsl_snippet(Cogl.SnippetHook.FRAGMENT, declarations, src, false);
+        }
+
+        vfunc_paint_target(...args) {
+            this.set_uniform_float(this._brightnessLoc, 1, [this._brightness]);
+            this.set_uniform_float(this._gammaKLoc, 1, [this._gammaK]);
+            const count = Math.min(this._monitorRects.length, MAX_SHADER_MONITORS);
+            this.set_uniform_float(this._monitorCountLoc, 1, [count]);
+            const flat = [];
+            for (let i = 0; i < MAX_SHADER_MONITORS; i++) {
+                const r = i < count ? this._monitorRects[i] : {x: 0, y: 0, w: 0, h: 0};
+                flat.push(r.x, r.y, r.w, r.h);
+            }
+            this.set_uniform_float(this._monitorRectsLoc, 4, flat);
+            super.vfunc_paint_target(...args);
+        }
+
+        update(brightness, gammaK, monitorRects) {
+            this._brightness = brightness;
+            this._gammaK = gammaK;
+            this._monitorRects = monitorRects;
+            this.queue_repaint();
+        }
+    }
+);
 
 export default class SoftBrightnessExtension extends Extension {
     constructor(...args) {
@@ -164,6 +240,7 @@ export default class SoftBrightnessExtension extends Extension {
             'changed::monitors': () => this._on_brightness_change(),
             'changed::builtin-monitor': () => this._on_brightness_change(),
             'changed::use-backlight': () => this._on_brightness_change(),
+            'changed::shader-gamma': () => this._on_brightness_change(),
             'changed::debug': () => this._on_debug_change(),
         }
         this._removeSettingsCallbacks = Object.entries(callbacks).map(
@@ -892,10 +969,13 @@ class CursorManager {
     }
 }
 
-// Alpha overlay lifecycle and cursor actor hosting.
-// Uses St.Widget with rgba(0,0,0,alpha) for dimming on all platforms.
-// Shell.GLSLEffect on global.stage produces a solid-color screen on both
-// X11 and Wayland and has been removed.
+// Gamma-curve shader lifecycle and cursor actor hosting.
+// Applies GammaCurveEffect to each direct child of global.stage individually.
+//
+// Shell.GLSLEffect on global.stage itself does NOT work — the stage is the
+// root framebuffer and cannot be redirected to a FBO.  Individual child
+// actors (window_group, uiGroup, etc.) CAN be FBO-redirected, so we apply
+// one GammaCurveEffect instance per stage child instead.
 class OverlayManager {
     constructor(logger, settings, monitorManager) {
         this._logger = logger;
@@ -905,7 +985,10 @@ class OverlayManager {
         this._actorGroup = null;
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
-        this._alphaOverlays = [];
+        // [{actor, effect}] — stage children currently carrying our shader
+        this._shaderTargets = [];
+        // null = not dimming; number = current brightness level
+        this._currentBrightness = null;
     }
 
     enable() {
@@ -918,11 +1001,11 @@ class OverlayManager {
         const clutterContainer = Clutter.Container !== undefined;
         this._actorAddedConnection = global.stage.connect(
             clutterContainer ? 'actor-added' : 'child-added',
-            this._restackActorGroup.bind(this),
+            this._onStageChildAdded.bind(this),
         );
         this._actorRemovedConnection = global.stage.connect(
             clutterContainer ? 'actor-removed' : 'child-removed',
-            this._restackActorGroup.bind(this),
+            this._onStageChildRemoved.bind(this),
         );
     }
 
@@ -937,16 +1020,14 @@ class OverlayManager {
         global.stage.remove_child(this._actorGroup);
         this._actorGroup.destroy();
         this._actorGroup = null;
-        this._alphaOverlays = [];
     }
 
     resetSize() {
         this._actorGroup.set_size(global.screen_width, global.screen_height);
-        // Per-monitor overlays are repositioned on the next show() call
     }
 
     initialized() {
-        return this._alphaOverlays.length > 0;
+        return this._shaderTargets.length > 0;
     }
 
     addActor(actor) {
@@ -958,61 +1039,95 @@ class OverlayManager {
             this._actorGroup.remove_child(actor);
     }
 
-    _restackActorGroup() {
+    _onStageChildAdded(_stage, child) {
         this._actorGroup.get_parent().set_child_above_sibling(this._actorGroup, null);
+        if (child !== this._actorGroup && this._currentBrightness !== null) {
+            this._applyShaderToActor(child);
+        }
+    }
+
+    _onStageChildRemoved(_stage, child) {
+        if (this._actorGroup.get_parent())
+            this._actorGroup.get_parent().set_child_above_sibling(this._actorGroup, null);
+        const idx = this._shaderTargets.findIndex(t => t.actor === child);
+        if (idx !== -1) {
+            const [removed] = this._shaderTargets.splice(idx, 1);
+            try { removed.actor.remove_effect(removed.effect); } catch (_e) {}
+        }
+    }
+
+    _applyShaderToActor(actor) {
+        const gammaK = this._settings.get_double('shader-gamma');
+        const monitorRects = this._getShaderMonitorRects();
+        const effect = new GammaCurveEffect(this._currentBrightness, gammaK, monitorRects);
+        actor.add_effect_with_name('soft-brightness-plus-shader', effect);
+        this._shaderTargets.push({ actor, effect });
+        this._logger.log_debug('_applyShaderToActor: ' + (actor.name || String(actor)));
     }
 
     show(brightness) {
         this._logger.log_debug('show(' + brightness + ')');
-        const alpha = 1.0 - brightness;
-        const styleStr = 'background-color: rgba(0,0,0,' + alpha.toFixed(4) + ');';
-        const rects = this._getOverlayRects();
+        this._currentBrightness = brightness;
 
-        // Grow the pool if we need more overlay actors
-        while (this._alphaOverlays.length < rects.length) {
-            const overlay = new St.Widget({ name: 'soft-brightness-plus-alpha-overlay' });
-            this._actorGroup.insert_child_at_index(overlay, this._alphaOverlays.length);
-            this._alphaOverlays.push(overlay);
+        const gammaK = this._settings.get_double('shader-gamma');
+        const monitorRects = this._getShaderMonitorRects();
+
+        const targets = global.stage.get_children().filter(c => c !== this._actorGroup);
+        const existingMap = new Map(this._shaderTargets.map(t => [t.actor, t.effect]));
+
+        // Remove effects from actors no longer in stage children list
+        for (const { actor, effect } of this._shaderTargets) {
+            if (!targets.includes(actor)) {
+                try { actor.remove_effect(effect); } catch (_e) {}
+            }
         }
 
-        // Update and show the active overlays
-        for (let i = 0; i < rects.length; i++) {
-            const r = rects[i];
-            this._alphaOverlays[i].set_position(r.x, r.y);
-            this._alphaOverlays[i].set_size(r.width, r.height);
-            this._alphaOverlays[i].set_style(styleStr);
-            this._alphaOverlays[i].show();
-        }
-
-        // Hide any extras from a previous multi-monitor layout
-        for (let i = rects.length; i < this._alphaOverlays.length; i++) {
-            this._alphaOverlays[i].hide();
-        }
+        // Apply or update shader on each current stage child
+        this._shaderTargets = targets.map(actor => {
+            if (existingMap.has(actor)) {
+                const effect = existingMap.get(actor);
+                effect.update(brightness, gammaK, monitorRects);
+                effect.enabled = true;
+                return { actor, effect };
+            }
+            const effect = new GammaCurveEffect(brightness, gammaK, monitorRects);
+            actor.add_effect_with_name('soft-brightness-plus-shader', effect);
+            return { actor, effect };
+        });
     }
 
     hide() {
-        for (const overlay of this._alphaOverlays)
-            overlay.hide();
+        this._currentBrightness = null;
+        for (const { actor, effect } of this._shaderTargets) {
+            try { actor.remove_effect(effect); } catch (_e) {}
+        }
+        this._shaderTargets = [];
     }
 
     hideForScreenshot() {
-        for (const overlay of this._alphaOverlays)
-            overlay.hide();
+        for (const { effect } of this._shaderTargets)
+            effect.enabled = false;
     }
 
-    // Returns pixel-space rects [{x,y,width,height}] for the monitors to dim.
-    _getOverlayRects() {
+    // Returns UV-space rects [{x,y,w,h}] relative to stage size for monitor targeting.
+    // Empty array = dim the entire actor (monitors='all').
+    _getShaderMonitorRects() {
         const enabledMonitors = this._settings.get_string('monitors');
-        if (enabledMonitors === 'all') {
-            return [{ x: 0, y: 0, width: global.screen_width, height: global.screen_height }];
-        }
+        if (enabledMonitors === 'all') return [];
 
         const monitors = this._monitorManager.getMonitors();
-        if (!monitors || monitors.length === 0) {
-            return [{ x: 0, y: 0, width: global.screen_width, height: global.screen_height }];
-        }
+        if (!monitors || monitors.length === 0) return [];
 
-        return monitors.map(m => ({ x: m.x, y: m.y, width: m.width, height: m.height }));
+        const sw = global.stage.width;
+        const sh = global.stage.height;
+        if (!sw || !sh) return [];
+
+        return monitors.map(m => ({
+            x: m.x / sw,
+            y: m.y / sh,
+            w: m.width / sw,
+            h: m.height / sh,
+        }));
     }
 }
 
