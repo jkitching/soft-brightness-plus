@@ -50,6 +50,10 @@ SCHEMA_ID="org.gnome.shell.extensions.soft-brightness-plus"
 # Enable the extension before gnome-shell reads settings
 gsettings set org.gnome.shell enabled-extensions "['${UUID}']"
 
+# Enable development tools so Shell.Eval D-Bus method is available for CI shader checks.
+# Required in GNOME 43+ where Eval is disabled unless development-tools is true.
+gsettings set org.gnome.shell development-tools true
+
 # Enable extension debug logging so brightness changes appear in gnome-shell log
 GSETTINGS_SCHEMA_DIR="${SCHEMA_DIR}" \
     gsettings set "${SCHEMA_ID}" debug true
