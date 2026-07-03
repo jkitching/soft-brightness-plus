@@ -269,11 +269,11 @@ export default class SoftBrightnessExtension extends Extension {
         }
         if (curBrightness >= 1) {
             this._overlayManager.hide();
-            this._cursorManager.setDimFactor(1.0);
             this._cursorManager.setActive(false);
         } else {
             this._overlayManager.show(curBrightness);
-            this._cursorManager.setDimFactor(curBrightness);
+            // The clone lives inside uiGroup, so the screen shader dims it;
+            // do NOT also modulate the sprite texture (double dimming).
             this._cursorManager.setActive(this._overlayManager.initialized());
         }
     }
@@ -924,6 +924,9 @@ class CursorManager {
     _updateMousePosition() {
         const [x, y] = global.get_pointer();
         this._cursorActor.set_position(x, y);
+        // Keep the clone above menus/dialogs that raised themselves (cheap
+        // no-op when nothing changed).
+        this._overlayManager.raiseToTop();
     }
 
     _onCursorVisibilityChanged() {
@@ -951,18 +954,15 @@ class CursorManager {
             this._cursorSprite.hide();
         }
 
-        // get_sprite() returns a texture in device pixels; actor coords are logical.
-        // On fractional/HiDPI displays these differ, making the cloned cursor
-        // appear larger than the real one.  get_scale() (Mutter ≥ 44) gives the
-        // device-pixel factor; dividing by it converts device px → logical px.
-        const cursorScale = this._cursorTracker.get_scale?.() ?? 1;
-        const spriteScale = 1 / cursorScale;
-        this._cursorSprite.set_scale(spriteScale, spriteScale);
-
+        // MouseSpriteContent normalizes the texture to the theme's cursor
+        // size (texture px ÷ guessed texture scale), so sprites at 1x and
+        // 2x render the same size.  The hotspot arrives in texture pixels
+        // and needs the same normalization.
+        const scale = this._cursorSprite.content.spriteScale;
         const [xHot, yHot] = this._cursorTracker.get_hot();
         this._cursorSprite.set({
-            translation_x: -xHot * spriteScale,
-            translation_y: -yHot * spriteScale,
+            translation_x: -xHot / scale,
+            translation_y: -yHot / scale,
         });
     }
 
@@ -1028,6 +1028,7 @@ class OverlayManager {
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
         this._windowCreatedId = null;
+        this._uiGroupChildAddedConnection = null;
         // [{actor, effect, destroyId}] — actors currently carrying our shader
         this._shaderTargets = [];
         // null = not dimming; number = current brightness level
@@ -1040,18 +1041,21 @@ class OverlayManager {
         this._actorGroup = new St.Widget({ name: 'soft-brightness-plus-overlays' });
         this.resetSize();
         Shell.util_set_hidden_from_pick(this._actorGroup, true);
-        global.stage.add_child(this._actorGroup);
+        // Host the cursor-clone group inside uiGroup — like the magnifier
+        // does — so the clone is part of the shader-dimmed content: it
+        // inherits the dimming and its movement is damage-tracked inside
+        // the same redirected framebuffer (a stage-level group above the
+        // FBO leaves stale cursor trails behind).
+        Main.uiGroup.add_child(this._actorGroup);
 
         // In GS 45, use of "actor" was renamed to "child".
         const clutterContainer = Clutter.Container !== undefined;
+        const addedSignal = clutterContainer ? 'actor-added' : 'child-added';
+        const removedSignal = clutterContainer ? 'actor-removed' : 'child-removed';
         this._actorAddedConnection = global.stage.connect(
-            clutterContainer ? 'actor-added' : 'child-added',
-            this._onStageChildAdded.bind(this),
-        );
+            addedSignal, this._onStageChildAdded.bind(this));
         this._actorRemovedConnection = global.stage.connect(
-            clutterContainer ? 'actor-removed' : 'child-removed',
-            this._onStageChildRemoved.bind(this),
-        );
+            removedSignal, this._onStageChildRemoved.bind(this));
 
         // Apply shader to new windows as they are created.
         this._windowCreatedId = global.display.connect('window-created', (_display, win) => {
@@ -1060,6 +1064,12 @@ class OverlayManager {
             if (actor)
                 this._applyShaderToActor(actor);
         });
+
+        // Keep the clone group above popups and other late uiGroup additions.
+        this._uiGroupChildAddedConnection = Main.uiGroup.connect(
+            addedSignal, () => {
+                Main.uiGroup.set_child_above_sibling(this._actorGroup, null);
+            });
     }
 
     disable() {
@@ -1069,12 +1079,14 @@ class OverlayManager {
         }
         global.stage.disconnect(this._actorAddedConnection);
         global.stage.disconnect(this._actorRemovedConnection);
+        Main.uiGroup.disconnect(this._uiGroupChildAddedConnection);
         this._actorAddedConnection = null;
         this._actorRemovedConnection = null;
+        this._uiGroupChildAddedConnection = null;
 
         this.hide();
 
-        global.stage.remove_child(this._actorGroup);
+        Main.uiGroup.remove_child(this._actorGroup);
         this._actorGroup.destroy();
         this._actorGroup = null;
     }
@@ -1089,6 +1101,18 @@ class OverlayManager {
 
     addActor(actor) {
         this._actorGroup.add_child(actor);
+        this.raiseToTop();
+    }
+
+    // Menus and dialogs raise themselves above their uiGroup siblings when
+    // opening, which puts them above the cursor clone; no signal fires on
+    // reorder, so callers re-assert topmost position (no-op when already top).
+    raiseToTop() {
+        if (this._actorGroup !== null &&
+            this._actorGroup.get_parent() === Main.uiGroup &&
+            Main.uiGroup.get_last_child() !== this._actorGroup) {
+            Main.uiGroup.set_child_above_sibling(this._actorGroup, null);
+        }
     }
 
     removeActor(actor) {
@@ -1097,9 +1121,9 @@ class OverlayManager {
     }
 
     _onStageChildAdded(_stage, child) {
-        this._actorGroup.get_parent().set_child_above_sibling(this._actorGroup, null);
         // Skip MetaWindowGroup — it cannot be FBO-redirected. Window content is
         // covered by applying the shader to MetaWindowActors via window-created.
+        // (_actorGroup now lives in uiGroup, so no stage-level raise is needed.)
         if (child !== this._actorGroup && child !== global.window_group &&
             this._currentBrightness !== null) {
             this._applyShaderToActor(child);
@@ -1107,8 +1131,6 @@ class OverlayManager {
     }
 
     _onStageChildRemoved(_stage, child) {
-        if (this._actorGroup.get_parent())
-            this._actorGroup.get_parent().set_child_above_sibling(this._actorGroup, null);
         this._removeActorFromTargets(child);
     }
 
