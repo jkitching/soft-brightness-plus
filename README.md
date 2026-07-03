@@ -213,18 +213,18 @@ Install directly from the [Gnome Shell Extensions
 site](https://extensions.gnome.org/extension/5943/soft-brightness-plus/).
 
 Or download the [zip
-file](https://github.com/jkitching/soft-brightness-plus/releases/download/v51/soft-brightness-plus@joelkitching.com.v51.shell-extension.zip)
+file](https://github.com/jkitching/soft-brightness-plus/releases/download/v52/soft-brightness-plus@joelkitching.com.v52.shell-extension.zip)
 from the GitHub [releases
 page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 
 ``` shell
-gnome-extensions install soft-brightness-plus@joelkitching.com.v51.shell-extension.zip
+gnome-extensions install soft-brightness-plus@joelkitching.com.v52.shell-extension.zip
 ```
 
 If you're upgrading from an existing installation, add `--force`:
 
 ``` shell
-gnome-extensions install --force soft-brightness-plus@joelkitching.com.v51.shell-extension.zip
+gnome-extensions install --force soft-brightness-plus@joelkitching.com.v52.shell-extension.zip
 ```
 
 ## Building from source
@@ -246,6 +246,19 @@ gnome-extensions install --force soft-brightness-plus@joelkitching.com.v51.shell
 - To build the extension zip files, run: `ninja -C build extension.zip`, the extension will be found under `build/extension.zip`.
 
 ## Changelog
+
+### Version 52
+#### July 3, 2026
+
+- Fix critical Wayland regression: `Shell.GLSLEffect` on
+  `global.stage` produces a solid-colour screen on both X11
+  and Wayland (the stage is the root framebuffer and cannot
+  be redirected to an FBO). Removed the GLSL shader entirely.
+  All platforms now use the stable alpha overlay approach
+  (linear dimming). Gamma curve support will return in a
+  future release once a proper per-actor implementation and
+  integration test environment are in place.
+- Remove "Dimming curve" preference (no-op without shader).
 
 ### Version 51
 #### July 3, 2026

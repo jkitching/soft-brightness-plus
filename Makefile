@@ -1,4 +1,4 @@
-VERSION  := 51
+VERSION  := 52
 UUID     := soft-brightness-plus@joelkitching.com
 DOMAIN   := soft-brightness-plus
 
