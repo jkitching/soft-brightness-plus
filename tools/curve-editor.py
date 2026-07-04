@@ -5,10 +5,13 @@
 # drag, so the screen updates in real time (the extension must be
 # enabled and brightness below 1.0 for dimming to be active).
 #
-# The curve defines the dimming shape at FULL strength; the extension's
-# brightness slider blends between no dimming (slider at max) and this
-# curve (slider at min), so the slider keeps working while a curve is
-# active.  Design with the slider near minimum to see the pure curve.
+# The curve you draw is the pixel mapping AT 50% BRIGHTNESS.  The old
+# default at that point is the straight line to (1, 0.5) — drag the
+# highlight end below it to dim whites harder than the default, or
+# lift the shadow end above it to preserve darks.  The brightness
+# slider scales your curve proportionally (clamped so pixels never
+# get brighter than their input), so it keeps working while a curve
+# is active; set it near 50% while designing for a 1:1 view.
 #
 #   - drag points to shape the curve (monotone cubic interpolation)
 #   - double-click on the curve to add a point
@@ -99,7 +102,8 @@ class CurveEditor(Gtk.ApplicationWindow):
         super().__init__(application=app, title='Soft Brightness Curve')
         self.settings = get_settings()
         # Control points, always sorted by x, x in [0,1], y in [0,1].
-        self.points = [(0.0, 0.0), (0.5, 0.35), (1.0, 0.6)]
+        # Start on the old-default line (out = brightness * x).
+        self.points = [(0.0, 0.0), (1.0, 0.5)]
         self.drag_index = None
         self.write_pending = False
 
@@ -125,13 +129,11 @@ class CurveEditor(Gtk.ApplicationWindow):
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         box.append(buttons)
-        # Presets are FULL-STRENGTH dimming shapes (what the screen does at
-        # slider minimum); the brightness slider blends identity <-> shape.
-        # A y=0 line reproduces pure backlight dimming (out = b*c); an
-        # identity line would mean "dimming does nothing at any slider
-        # position", so there is deliberately no identity preset.
+        # Presets are mappings at 50% brightness; the slider scales them
+        # proportionally.  The straight line to (1, 0.5) IS the old
+        # default (out = brightness * x) at every slider position.
         for label, cb in [
-            ('Backlight (linear)', self.preset_backlight),
+            ('Old default', self.preset_backlight),
             ('Keep shadows', self.preset_keep_shadows),
             ('Clear override', self.clear_override),
             ('Print LUT', self.print_lut),
@@ -142,9 +144,9 @@ class CurveEditor(Gtk.ApplicationWindow):
 
         self.legend = Gtk.Label(xalign=0)
         self.legend.set_markup(
-            '<span foreground="#dddddd">━ your curve (at slider minimum)</span>   '
+            '<span foreground="#dddddd">━ your curve (at 50% brightness)</span>   '
             '<span foreground="#66b3ff">━ screen right now</span>   '
-            '<span foreground="#ff9944">╍ old default right now</span>')
+            '<span foreground="#ff9944">╍ old default (at 50%)</span>')
         box.append(self.legend)
 
         self.status = Gtk.Label(label='Drag points; changes apply live.',
@@ -186,24 +188,25 @@ class CurveEditor(Gtk.ApplicationWindow):
 
         f = monotone_cubic(self.points)
         b = min(1.0, max(0.0, self.settings.get_double('current-brightness')))
-        strength = 1.0 - b
 
-        # old default (out = b*x) at the current slider value, dashed orange
+        # old default at the 50% design point (y = 0.5x), dashed orange —
+        # drag your curve below it to dim harder than the default,
+        # above it to preserve more
         cr.set_source_rgb(1.0, 0.6, 0.27)
         cr.set_dash([6, 4])
         cr.set_line_width(1.5)
         cr.move_to(*self.to_screen(0, 0, w, h))
-        cr.line_to(*self.to_screen(1, b, w, h))
+        cr.line_to(*self.to_screen(1, 0.5, w, h))
         cr.stroke()
         cr.set_dash([])
 
         # effective mapping at the current slider value:
-        # out = mix(x, curve(x), 1 - b) — what the screen shows right now
+        # out = min(x, (b/0.5) * curve(x)) — what the screen shows right now
         cr.set_source_rgb(0.4, 0.7, 1.0)
         cr.set_line_width(2)
         for i in range(0, w + 1, 2):
             x = i / w
-            y = x + (f(x) - x) * strength
+            y = min(x, 2.0 * b * f(x))
             sx, sy = self.to_screen(x, y, w, h)
             (cr.move_to if i == 0 else cr.line_to)(sx, sy)
         cr.stroke()
@@ -292,15 +295,15 @@ class CurveEditor(Gtk.ApplicationWindow):
         print('points:', ' '.join(f'({x:.3f},{y:.3f})' for x, y in self.points))
         self.status.set_text('LUT printed to stdout')
 
-    # --- presets (full-strength dimming shapes) ----------------------------
+    # --- presets (mappings at 50% brightness) -------------------------------
     def preset_backlight(self, _b):
-        # Blended with the slider this is exactly out = brightness * c.
-        self.points = [(0.0, 0.0), (1.0, 0.0)]
+        # Scaled by the slider this is exactly out = brightness * x.
+        self.points = [(0.0, 0.0), (1.0, 0.5)]
         self.area.queue_draw(); self.push_curve()
 
     def preset_keep_shadows(self, _b):
-        # Darks survive even at full strength; highlights crushed.
-        self.points = [(0.0, 0.0), (0.25, 0.22), (1.0, 0.3)]
+        # Shadows track their input; highlights pulled below the default.
+        self.points = [(0.0, 0.0), (0.3, 0.28), (1.0, 0.4)]
         self.area.queue_draw(); self.push_curve()
 
 
