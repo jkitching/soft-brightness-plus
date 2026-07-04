@@ -66,6 +66,16 @@
       <description>Enable debugging for the extension.</description>
     </key>
 
+    <key name="debug-curve" type="s">
+      <default>''</default>
+      <summary>Debug dimming-curve override (LUT).</summary>
+      <description>For experimentation only; no UI. When non-empty, replaces
+      the dimming formula with a lookup table: comma-separated output values
+      (0..1) for evenly spaced input values from 0 to 1, at least 2 samples.
+      Edit interactively with tools/curve-editor.py. Set to the empty string
+      to return to formula-based dimming.</description>
+    </key>
+
     <key name="shader-gamma" type="d">
       <range min="1.0" max="4.0"/>
       <default>2.0</default>
