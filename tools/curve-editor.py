@@ -140,9 +140,20 @@ class CurveEditor(Gtk.ApplicationWindow):
             b.connect('clicked', cb)
             buttons.append(b)
 
+        self.legend = Gtk.Label(xalign=0)
+        self.legend.set_markup(
+            '<span foreground="#dddddd">━ your curve (at slider minimum)</span>   '
+            '<span foreground="#66b3ff">━ screen right now</span>   '
+            '<span foreground="#ff9944">╍ old default right now</span>')
+        box.append(self.legend)
+
         self.status = Gtk.Label(label='Drag points; changes apply live.',
                                 xalign=0)
         box.append(self.status)
+
+        # Redraw the live lines when the brightness slider moves.
+        self.settings.connect('changed::current-brightness',
+                              lambda *a: self.area.queue_draw())
         self.push_curve()
 
     # --- geometry helpers -------------------------------------------------
@@ -172,9 +183,33 @@ class CurveEditor(Gtk.ApplicationWindow):
         # identity diagonal
         cr.set_source_rgb(0.35, 0.35, 0.35)
         cr.move_to(0, h); cr.line_to(w, 0); cr.stroke()
-        # curve
+
         f = monotone_cubic(self.points)
+        b = min(1.0, max(0.0, self.settings.get_double('current-brightness')))
+        strength = 1.0 - b
+
+        # old default (out = b*x) at the current slider value, dashed orange
+        cr.set_source_rgb(1.0, 0.6, 0.27)
+        cr.set_dash([6, 4])
+        cr.set_line_width(1.5)
+        cr.move_to(*self.to_screen(0, 0, w, h))
+        cr.line_to(*self.to_screen(1, b, w, h))
+        cr.stroke()
+        cr.set_dash([])
+
+        # effective mapping at the current slider value:
+        # out = mix(x, curve(x), 1 - b) — what the screen shows right now
         cr.set_source_rgb(0.4, 0.7, 1.0)
+        cr.set_line_width(2)
+        for i in range(0, w + 1, 2):
+            x = i / w
+            y = x + (f(x) - x) * strength
+            sx, sy = self.to_screen(x, y, w, h)
+            (cr.move_to if i == 0 else cr.line_to)(sx, sy)
+        cr.stroke()
+
+        # the editable full-strength curve
+        cr.set_source_rgb(0.85, 0.85, 0.85)
         cr.set_line_width(2)
         for i in range(0, w + 1, 2):
             x = i / w
