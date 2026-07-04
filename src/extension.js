@@ -34,10 +34,16 @@ import * as Logger from './logger.js';
 import * as Utils from './utils.js';
 import { MouseSpriteContent } from './cursor.js';
 
-// Gamma-curve GLSL dimming effect.
-// Maps: out = brightness * (1 - (1 - in)^gamma_k)
-//   gamma_k = 1  →  identical to linear overlay
-//   gamma_k > 1  →  darks preserved better; highlights compress faster
+// Blended GLSL dimming effect: interpolates between backlight-like
+// linear scaling and shadow-preserving highlight compression.
+//   linear: out = b * c — contrast ratios preserved, like a hardware
+//           backlight; blacks stay black, everything scales down.
+//   cap:    out = c * (1 + ((1/b)^4 - 1) * c^4)^(-1/4) — darks are
+//           untouched (slope 1 at c=0), brights soft-clamped to b.
+//   out = mix(linear, cap, t), t = (gamma_k - 1) / 3
+// gamma_k is the "Shadow preservation" slider (1..4):
+//   1 → pure backlight-like; 4 → darks kept, highlights capped at b.
+// Pure white maps to b at every slider position; b = 1 → identity.
 //
 // monitorRects: [{x,y,w,h}] in UV [0,1] actor-local space.
 //   Empty (length 0) → dim the entire actor.
@@ -80,7 +86,11 @@ const GammaCurveEffect = GObject.registerClass(
                     }
                 }
                 if (dim) {
-                    c = u_brightness * (1.0 - pow(1.0 - c, vec3(u_gamma_k)));
+                    float b = clamp(u_brightness, 0.01, 1.0);
+                    float t = clamp((u_gamma_k - 1.0) / 3.0, 0.0, 1.0);
+                    float a = pow(1.0 / b, 4.0) - 1.0;
+                    vec3 cap = c * pow(1.0 + a * pow(c, vec3(4.0)), vec3(-0.25));
+                    c = mix(b * c, cap, t);
                 }
                 cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_out.a);
             `;
@@ -685,10 +695,6 @@ class CursorManager {
         // State trackers
         this._active = false;
         this._cloned = false;
-        // Multiplier applied to the cloned cursor texture (1 = no dimming).
-        // For a white pixel the gamma curve reduces to out = brightness, so
-        // a flat multiply by brightness matches the shader-dimmed screen.
-        this._dimFactor = 1.0;
 
         // Set/destroyed by enable/disable
         this._enableTimeoutId = null;
@@ -717,19 +723,12 @@ class CursorManager {
         this._changeHookFn = fn;
     }
 
-    setDimFactor(factor) {
-        this._dimFactor = factor;
-        if (this._cursorSprite !== null && this._cursorSprite.content)
-            this._cursorSprite.content.dimFactor = factor;
-    }
-
     enable() {
         // First 500ms: For some reason, starting the mouse cloning at this
         // stage fails when gnome-shell is restarting on x11 and the mouse
         // listener doesn't receive any events.  Adding a small delay before
         // starting the whole mouse cloning business helps.
         this._enableTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
-            // Wait 500ms before starting to check for the _brightness object.
             this._enableTimeoutId = null;
             this._enable();
             return GLib.SOURCE_REMOVE;
@@ -749,7 +748,7 @@ class CursorManager {
     }
 
     _update(suppressChangeHook = false) {
-        const newCloned = this._cloneMouseSetting && this._active;
+        const newCloned = !!(this._cloneMouseSetting && this._active);
         if (newCloned === this._cloned) {
             return;
         }
@@ -791,16 +790,9 @@ class CursorManager {
             this._logger.log_debug('_on_clone_mouse_change(): no setting change, no change');
             return;
         }
-        if (cloneMouse) {
-            // Starting to clone mouse
-            this._logger.log_debug('_on_clone_mouse_change(): starting mouse cloning');
-            this._cloneMouseSetting = true;
-            this._update();
-        } else {
-            this._logger.log_debug('_on_clone_mouse_change(): stopping mouse cloning');
-            this._cloneMouseSetting = false;
-            this._update();
-        }
+        this._logger.log_debug(`_on_clone_mouse_change(): ${cloneMouse ? 'starting' : 'stopping'} mouse cloning`);
+        this._cloneMouseSetting = cloneMouse;
+        this._update();
     }
 
     _enableCloningMouse() {
@@ -817,7 +809,6 @@ class CursorManager {
             // ("cursor trails") if this method runs twice.
             this._cursorSprite = new Clutter.Actor({ request_mode: Clutter.RequestMode.CONTENT_SIZE });
             this._cursorSprite.content = new MouseSpriteContent();
-            this._cursorSprite.content.dimFactor = this._dimFactor;
 
             this._cursorActor = new Clutter.Actor();
             this._cursorActor.add_child(this._cursorSprite);
@@ -829,15 +820,11 @@ class CursorManager {
                 'cursor-changed', this._updateMouseSprite.bind(this));
             this._cursorVisibilityChangedConnection = this._cursorTracker.connect(
                 'visibility-changed', this._onCursorVisibilityChanged.bind(this));
-            const interval = 1000 / 60;
-            this._logger.log_debug('_startCloningMouse(): watch interval = ' + interval + ' ms');
-            this._cursorWatch = this._cursorWatcher.addWatch(interval, this._updateMousePosition.bind(this));
+            this._startPointerWatch();
 
-            this._updateMouseSprite();
-            this._updateMousePosition();
-
-            // In GS 49, Meta.IdleMonitor.get_core() was removed in favor of
-            // global.backend.get_core_idle_monitor().
+            // In GS 49, Meta.IdleMonitor.get_core() was removed.
+            // global.backend.get_core_idle_monitor() exists on all supported
+            // versions (mutter 45+); the fallback is defensive only.
             this._idleMonitor = global.backend.get_core_idle_monitor !== undefined
                 ? global.backend.get_core_idle_monitor()
                 : Meta.IdleMonitor.get_core();
@@ -845,6 +832,15 @@ class CursorManager {
         }
 
         this._hideSystemCursor();
+    }
+
+    _startPointerWatch() {
+        const interval = 1000 / 60;
+        this._logger.log_debug('_startPointerWatch(): watch interval = ' + interval + ' ms');
+        this._cursorWatch = this._cursorWatcher.addWatch(
+            interval, this._updateMousePosition.bind(this));
+        this._updateMouseSprite();
+        this._updateMousePosition();
     }
 
     _setupCursorIdleWatch() {
@@ -862,12 +858,8 @@ class CursorManager {
             this._cursorActiveWatchId = this._idleMonitor.add_user_active_watch(() => {
                 this._cursorActiveWatchId = 0;
                 if (this._cursorWatcher != null && this._cursorWatch == null) {
-                    const interval = 1000 / 60;
-                    this._cursorWatch = this._cursorWatcher.addWatch(
-                        interval, this._updateMousePosition.bind(this));
                     this._cursorActor.show();
-                    this._updateMousePosition();
-                    this._updateMouseSprite();
+                    this._startPointerWatch();
                 }
                 if (this._idleMonitor != null)
                     this._setupCursorIdleWatch();
@@ -887,7 +879,7 @@ class CursorManager {
         this._idleMonitor = null;
 
         if (this._cursorInOverlay) {
-            this._logger.log_debug('_stopCloningMouse()');
+            this._logger.log_debug('_disableCloningMouse(): removing clone actors');
 
             if (this._cursorWatch != null) {
                 this._cursorWatch.remove();
@@ -905,8 +897,6 @@ class CursorManager {
         }
 
         this._showSystemCursor();
-
-        this._logger.log_debug('_disableCloningMouse()');
 
         this._cursorTracker = null;
         this._cursorSprite = null;
@@ -1050,12 +1040,12 @@ class OverlayManager {
 
         // In GS 45, use of "actor" was renamed to "child".
         const clutterContainer = Clutter.Container !== undefined;
-        const addedSignal = clutterContainer ? 'actor-added' : 'child-added';
-        const removedSignal = clutterContainer ? 'actor-removed' : 'child-removed';
         this._actorAddedConnection = global.stage.connect(
-            addedSignal, this._onStageChildAdded.bind(this));
+            clutterContainer ? 'actor-added' : 'child-added',
+            this._onStageChildAdded.bind(this));
         this._actorRemovedConnection = global.stage.connect(
-            removedSignal, this._onStageChildRemoved.bind(this));
+            clutterContainer ? 'actor-removed' : 'child-removed',
+            this._onStageChildRemoved.bind(this));
 
         // Apply shader to new windows as they are created.
         this._windowCreatedId = global.display.connect('window-created', (_display, win) => {
@@ -1065,11 +1055,13 @@ class OverlayManager {
                 this._applyShaderToActor(actor);
         });
 
-        // Keep the clone group above popups and other late uiGroup additions.
+        // The pointer watch re-raises the clone group on motion, but a
+        // popup opened via keyboard with the pointer stationary would
+        // cover the clone until the mouse next moves — also re-raise
+        // when something is added to uiGroup.
         this._uiGroupChildAddedConnection = Main.uiGroup.connect(
-            addedSignal, () => {
-                Main.uiGroup.set_child_above_sibling(this._actorGroup, null);
-            });
+            clutterContainer ? 'actor-added' : 'child-added',
+            () => this.raiseToTop());
     }
 
     disable() {
@@ -1148,6 +1140,8 @@ class OverlayManager {
     _applyShaderToActor(actor) {
         const gammaK = this._settings.get_double('shader-gamma');
         const monitorRects = this._getShaderMonitorRects();
+        if (monitorRects === null)
+            return;
         const effect = new GammaCurveEffect(this._currentBrightness, gammaK, monitorRects);
         actor.add_effect_with_name('soft-brightness-plus-shader', effect);
         const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
@@ -1160,13 +1154,19 @@ class OverlayManager {
 
         const gammaK = this._settings.get_double('shader-gamma');
         const monitorRects = this._getShaderMonitorRects();
+        if (monitorRects === null) {
+            // Monitor selection matches nothing: dim nothing.
+            this.hide();
+            return;
+        }
 
-        // Build target list: stage children minus actorGroup and MetaWindowGroup,
-        // plus all MetaWindowActors (individual windows are FBO-redirectable).
-        // The cursor-clone group (_actorGroup) must NOT carry the shader:
-        // FBO-redirecting actors that move every frame (the cursor clone)
-        // leaves stale trails behind.  The clone is dimmed via texture color
-        // modulation in MouseSpriteContent instead (see CursorManager).
+        // Build target list: stage children minus MetaWindowGroup (it cannot
+        // be FBO-redirected), plus all MetaWindowActors (individual windows
+        // are FBO-redirectable).
+        // _actorGroup (the cursor-clone host) is not a stage child: it lives
+        // inside uiGroup, so the uiGroup effect dims the clone and tracks its
+        // damage.  Giving the clone its own effect instead would FBO-redirect
+        // an actor that moves every frame, leaving stale trails behind.
         const stageTargets = global.stage.get_children().filter(c =>
             c !== this._actorGroup && c !== global.window_group
         );
@@ -1236,12 +1236,15 @@ class OverlayManager {
         const enabledMonitors = this._settings.get_string('monitors');
         if (enabledMonitors === 'all') return [];
 
+        // The selection matches no monitor (e.g. monitors='external' while
+        // undocked, or the monitor list is not known yet): return null =
+        // dim nothing.  [] is reserved for 'all' = dim everything.
         const monitors = this._monitorManager.getMonitors();
-        if (!monitors || monitors.length === 0) return [];
+        if (!monitors || monitors.length === 0) return null;
 
         const sw = global.stage.width;
         const sh = global.stage.height;
-        if (!sw || !sh) return [];
+        if (!sw || !sh) return null;
 
         return monitors.map(m => ({
             x: m.x / sw,

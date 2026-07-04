@@ -154,7 +154,7 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             group.add(this.min_brightness_control);
 
             this.shader_gamma_control = new Adw.ActionRow({
-                title: _('Dimming curve (1.0–4.0):'),
+                title: _('Shadow preservation (1.0–4.0):'),
                 subtitle: this._getDescription('shader-gamma'),
             });
             {

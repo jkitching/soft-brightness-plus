@@ -69,10 +69,12 @@
     <key name="shader-gamma" type="d">
       <range min="1.0" max="4.0"/>
       <default>2.0</default>
-      <summary>Gamma curve exponent.</summary>
-      <description>Controls the gamma curve used for dimming. A value of 1.0
-      is linear. Values above 1.0 preserve shadows better while compressing
-      highlights more aggressively — 2.0 is the recommended starting point.</description>
+      <summary>Shadow preservation.</summary>
+      <description>How dimming treats dark areas. At 1.0 the screen scales
+      down uniformly like a hardware backlight (contrast preserved). At 4.0
+      dark areas are left untouched and only bright areas are toned down to
+      the brightness level (lower contrast at strong dimming). Values in
+      between blend the two.</description>
     </key>
   </schema>
 </schemalist>
