@@ -125,10 +125,14 @@ class CurveEditor(Gtk.ApplicationWindow):
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         box.append(buttons)
+        # Presets are FULL-STRENGTH dimming shapes (what the screen does at
+        # slider minimum); the brightness slider blends identity <-> shape.
+        # A y=0 line reproduces pure backlight dimming (out = b*c); an
+        # identity line would mean "dimming does nothing at any slider
+        # position", so there is deliberately no identity preset.
         for label, cb in [
-            ('Identity', self.preset_identity),
-            ('Backlight 0.5', lambda b: self.preset_linear(0.5)),
-            ('Cap 0.5', lambda b: self.preset_cap(0.5)),
+            ('Backlight (linear)', self.preset_backlight),
+            ('Keep shadows', self.preset_keep_shadows),
             ('Clear override', self.clear_override),
             ('Print LUT', self.print_lut),
         ]:
@@ -253,17 +257,15 @@ class CurveEditor(Gtk.ApplicationWindow):
         print('points:', ' '.join(f'({x:.3f},{y:.3f})' for x, y in self.points))
         self.status.set_text('LUT printed to stdout')
 
-    # --- presets ----------------------------------------------------------
-    def preset_identity(self, _b):
-        self.points = [(0.0, 0.0), (1.0, 1.0)]
+    # --- presets (full-strength dimming shapes) ----------------------------
+    def preset_backlight(self, _b):
+        # Blended with the slider this is exactly out = brightness * c.
+        self.points = [(0.0, 0.0), (1.0, 0.0)]
         self.area.queue_draw(); self.push_curve()
 
-    def preset_linear(self, b):
-        self.points = [(0.0, 0.0), (1.0, b)]
-        self.area.queue_draw(); self.push_curve()
-
-    def preset_cap(self, b):
-        self.points = [(0.0, 0.0), (b * 0.8, b * 0.78), (1.0, b)]
+    def preset_keep_shadows(self, _b):
+        # Darks survive even at full strength; highlights crushed.
+        self.points = [(0.0, 0.0), (0.25, 0.22), (1.0, 0.3)]
         self.area.queue_draw(); self.push_curve()
 
 
