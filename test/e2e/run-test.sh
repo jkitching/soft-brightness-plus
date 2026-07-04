@@ -50,20 +50,38 @@ SCHEMA_ID="org.gnome.shell.extensions.soft-brightness-plus"
 # Enable the extension before gnome-shell reads settings
 gsettings set org.gnome.shell enabled-extensions "['${UUID}']"
 
-# Enable development tools so Shell.Eval D-Bus method is available for CI shader checks.
-# Required in GNOME 43+ where Eval is disabled unless development-tools is true.
-gsettings set org.gnome.shell development-tools true
-
 # Enable extension debug logging so brightness changes appear in gnome-shell log
 GSETTINGS_SCHEMA_DIR="${SCHEMA_DIR}" \
     gsettings set "${SCHEMA_ID}" debug true
 
-# Set a light grey background so brightness changes are visually measurable
-# (default GNOME desktop background is black which is already at min brightness)
+# Set a vertical-gradient background so brightness changes are visually
+# measurable AND the baseline has pixel variation (a solid background makes
+# the "screen must not be a solid colour after dimming" check meaningless:
+# it cannot distinguish a healthy screen from the full-screen-gray shader bug).
 gsettings set org.gnome.desktop.background picture-options 'none'
-gsettings set org.gnome.desktop.background primary-color '#888888'
-gsettings set org.gnome.desktop.background secondary-color '#888888'
-gsettings set org.gnome.desktop.background color-shading-type 'solid'
+gsettings set org.gnome.desktop.background primary-color '#202020'
+gsettings set org.gnome.desktop.background secondary-color '#e0e0e0'
+gsettings set org.gnome.desktop.background color-shading-type 'vertical'
+
+# Kill every daemon we started on any exit path (the failure paths below
+# `exit 1` directly and would otherwise orphan pipewire/wireplumber/logind).
+GS_PID=""
+PIPEWIRE_PID=""
+WIREPLUMBER_PID=""
+LOGIND_PID=""
+inner_cleanup() {
+    kill ${GS_PID} ${WIREPLUMBER_PID} ${PIPEWIRE_PID} ${LOGIND_PID} 2>/dev/null || true
+}
+trap inner_cleanup EXIT
+
+# Start PipeWire inside this session: org.gnome.Mutter.ScreenCast (used for
+# the pixel checks below) hands frames over via a PipeWire stream.
+# XDG_RUNTIME_DIR is already set by the container.
+pipewire >/tmp/pipewire.log 2>&1 &
+PIPEWIRE_PID=$!
+wireplumber >/tmp/wireplumber.log 2>&1 &
+WIREPLUMBER_PID=$!
+sleep 1
 
 # Start a fake system D-Bus and register a logind stub on it.
 # gnome-shell connects to org.freedesktop.login1 on the system bus during
@@ -85,10 +103,13 @@ if [ "${MODE}" = "x11" ]; then
     MUTTER_DISABLE_ANIMATIONS=1 \
         gnome-shell >"${LOG}" 2>&1 &
 else
+    # --virtual-monitor is required for the pixel checks: plain --headless
+    # has zero monitors, so there is nothing to render or screencast.
+    # (MUTTER_DEBUG_DUMMY_MODE_SPECS only affects the nested/x11 backend
+    # and is a no-op here, so it is not set.)
     XDG_SESSION_TYPE=wayland \
-    MUTTER_DEBUG_DUMMY_MODE_SPECS="1920x1080" \
     MUTTER_DISABLE_ANIMATIONS=1 \
-        gnome-shell --headless >"${LOG}" 2>&1 &
+        gnome-shell --headless --virtual-monitor 1920x1080 >"${LOG}" 2>&1 &
 fi
 GS_PID=$!
 
@@ -121,138 +142,104 @@ else
     echo "  INFO: extension UUID not in log (may still be active)"
 fi
 
-# Visual and programmatic checks (X11 mode only — Wayland headless has no framebuffer)
-if [ "${MODE}" = "x11" ]; then
-    SCREEN_BASE="/tmp/screen-base.png"
-    SCREEN_DIMMED="/tmp/screen-dimmed.png"
-    PIXEL_CHECKS=false
-    DBUS_SHOT=false
+# Check 4: visual pixel checks.
+#
+# Capture goes through org.gnome.Mutter.ScreenCast + PipeWire + gst-launch
+# (see grab-frame.js). org.gnome.Shell.Screenshot is NOT usable here:
+# GNOME >= 41 restricts it to an allowlist of senders, and the extension
+# itself monkey-patches Shell.Screenshot to hide its dimming during
+# screenshots — either one alone would silently defeat the check. The X11
+# root window is not usable either: under a compositor it is always black.
+#
+# Policy: in wayland mode a capture failure is a HARD FAILURE — a silent
+# skip here previously let a full-screen-gray shader bug ship. In x11 mode
+# (Xvfb) screencast support is less certain, so a capture failure skips
+# the pixel checks loudly instead.
+SCREEN_BASE="/tmp/screen-base.png"
+SCREEN_DIMMED="/tmp/screen-dimmed.png"
+PIXEL_CHECKS=true
 
-    # Diagnostic: list windows on Xvfb to understand the rendering environment
-    WIN_COUNT=$(DISPLAY=:99 xwininfo -root -children 2>/dev/null | grep -c '"' || echo "0")
-    echo "  Info: ${WIN_COUNT} named windows on Xvfb :99"
-
-    # Diagnostic: check if org.gnome.Shell is registered on the session bus
-    GNOME_SHELL_ON_BUS=$(gdbus call --session \
-        -d org.freedesktop.DBus \
-        -o /org/freedesktop/DBus \
-        -m org.freedesktop.DBus.ListNames \
-        2>/dev/null | tr ',' '\n' | tr -d "' " | grep "^org.gnome.Shell$" || echo "")
-    echo "  INFO: org.gnome.Shell on D-Bus: ${GNOME_SHELL_ON_BUS:-not registered}"
-
-    # Primary: GNOME Shell D-Bus screenshot API — captures the compositor overlay,
-    # which is where gnome-shell actually renders its composited output in X11 mode.
-    # The root window (XGetImage) shows only the raw X11 background underneath the
-    # compositor, so it is always solid black. D-Bus goes through gnome-shell itself.
-    # Note: gdbus call takes individual GVariant positional args, not a tuple wrapper.
-    DBUS_ERR_FILE=/tmp/dbus-err-$$.txt
-    DBUS_RESULT=$(gdbus call --session \
-        -d org.gnome.Shell \
-        -o /org/gnome/Shell/Screenshot \
-        -m org.gnome.Shell.Screenshot.Screenshot \
-        "false" "false" "'${SCREEN_BASE}'" 2>"${DBUS_ERR_FILE}" || true)
-    DBUS_ERR=$(cat "${DBUS_ERR_FILE}" 2>/dev/null | head -1 || echo "")
-    rm -f "${DBUS_ERR_FILE}"
-    if echo "${DBUS_RESULT}" | grep -q "true"; then
-        echo "  INFO: D-Bus screenshot captured baseline via gnome-shell compositor"
-        DBUS_SHOT=true
-    else
-        echo "  INFO: D-Bus screenshot failed: result=${DBUS_RESULT:-empty} err=${DBUS_ERR:-none}"
-        echo "  INFO: falling back to root window capture"
-        DISPLAY=:99 import -window root "${SCREEN_BASE}" 2>/dev/null || true
-    fi
-
-    if [ -f "${SCREEN_BASE}" ]; then
-        STDDEV_BASE=$(convert "${SCREEN_BASE}" -colorspace Gray -format "%[fx:std]" info: 2>/dev/null || echo "0")
-        echo "  Visual: baseline stddev=${STDDEV_BASE}"
-        BASE_RENDERS=$(awk "BEGIN { print (${STDDEV_BASE} > 0.01) ? \"yes\" : \"no\" }")
-        if [ "${BASE_RENDERS}" = "yes" ]; then
-            PIXEL_CHECKS=true
-        else
-            echo "  WARN: baseline is solid — gnome-shell compositor output not capturable in this environment"
-            echo "  INFO: pixel checks skipped (environment limitation, not a shader bug)"
-        fi
-    else
-        echo "  WARN: baseline screenshot failed — skipping pixel checks"
-    fi
-
-    # Programmatic check: trigger dimming and verify the extension logs it (always runs)
-    GSETTINGS_SCHEMA_DIR="${SCHEMA_DIR}" \
-        gsettings set "${SCHEMA_ID}" current-brightness 0.5
-    sleep 3
-
-    if grep -q "current-brightness=0.5\|_on_brightness_change.*0.5\|show(0.5\|show.*brightness.*0.5" "${LOG}" 2>/dev/null; then
-        echo "  PASS: extension log confirms brightness change was applied"
-    else
-        if grep -q "OverlayManager\|GammaCurveEffect\|soft-brightness.*show\|_on_brightness" "${LOG}" 2>/dev/null; then
-            echo "  PASS: extension log shows overlay activity"
-        else
-            echo "  WARN: could not confirm brightness change in log"
-            grep -i "brightness\|overlay\|shader" "${LOG}" 2>/dev/null | tail -10 || true
-        fi
-    fi
-
-    # Shader GLSL error check: if GammaCurveEffect fails to compile or causes a GL
-    # error, gnome-shell logs it. A clean log means the shader at least compiled.
-    if grep -qiE "GL error|GLSL|fragment.*error|shader.*error" "${LOG}" 2>/dev/null; then
-        echo "  FAIL: GLSL shader error found in log"
-        grep -iE "GL error|GLSL|fragment.*error|shader.*error" "${LOG}" | head -5 || true
+pixel_capture_failed() {
+    if [ "${MODE}" = "wayland" ]; then
+        echo "  FAIL: $1 (pixel checks are mandatory in wayland mode — not skippable)"
+        tail -20 /tmp/pipewire.log 2>/dev/null || true
         kill "${GS_PID}" 2>/dev/null || true
         exit 1
     fi
-    echo "  PASS: no GLSL shader errors"
+    echo "  SKIPPED (x11): $1 — mutter screencast not usable under Xvfb here"
+    PIXEL_CHECKS=false
+}
 
-    if [ "${PIXEL_CHECKS}" = "true" ]; then
-        # Take dimmed screenshot using same method as baseline
-        if [ "${DBUS_SHOT}" = "true" ]; then
-            DBUS_RESULT2=$(gdbus call --session \
-                -d org.gnome.Shell \
-                -o /org/gnome/Shell/Screenshot \
-                -m org.gnome.Shell.Screenshot.Screenshot \
-                "false" "false" "'${SCREEN_DIMMED}'" 2>/dev/null || echo "")
-            if ! echo "${DBUS_RESULT2}" | grep -q "true"; then
-                echo "  WARN: dimmed D-Bus screenshot failed — skipping pixel checks"
-                PIXEL_CHECKS=false
-            fi
-        else
-            if ! DISPLAY=:99 import -window root "${SCREEN_DIMMED}" 2>/dev/null; then
-                echo "  WARN: dimmed screenshot failed — skipping pixel checks"
-                PIXEL_CHECKS=false
-            fi
-        fi
+if ! gjs /grab-frame.js "${SCREEN_BASE}" auto; then
+    pixel_capture_failed "screencast baseline capture failed"
+fi
+
+if [ "${PIXEL_CHECKS}" = "true" ]; then
+    # Note: the fx symbol is "standard_deviation"; "%[fx:std]" is an
+    # undefined-variable error that the "|| echo 0" fallback would mask.
+    # -alpha off matters: screencast PNGs are RGBA with constant alpha=1,
+    # which would otherwise dilute both the mean drop and the stddev.
+    STDDEV_BASE=$(convert "${SCREEN_BASE}" -alpha off -colorspace Gray -format "%[fx:standard_deviation]" info: 2>/dev/null || echo "0")
+    MEAN_BASE=$(convert "${SCREEN_BASE}" -alpha off -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
+    echo "  Visual: baseline stddev=${STDDEV_BASE} mean=${MEAN_BASE}"
+    BASE_RENDERS=$(awk "BEGIN { print (${STDDEV_BASE} > 0.01) ? \"yes\" : \"no\" }")
+    if [ "${BASE_RENDERS}" = "no" ]; then
+        pixel_capture_failed "baseline has no pixel variation (stddev=${STDDEV_BASE}) — gradient background did not render"
     fi
+fi
 
-    if [ "${PIXEL_CHECKS}" = "true" ] && [ -f "${SCREEN_DIMMED}" ]; then
-        # Visual check A: dimmed screenshot must NOT be solid colour.
-        # The shader-on-stage bug produces stddev ≈ 0 (all pixels same grey value).
-        # Only reached when baseline already showed variation (environment renders).
-        STDDEV=$(convert "${SCREEN_DIMMED}" -colorspace Gray -format "%[fx:std]" info: 2>/dev/null || echo "0")
-        echo "  Visual: dimmed screenshot stddev=${STDDEV}"
-        STDDEV_OK=$(awk "BEGIN { print (${STDDEV} > 0.01) ? \"yes\" : \"no\" }")
-        if [ "${STDDEV_OK}" = "no" ]; then
-            echo "  FAIL: solid-colour screen after dimming (stddev=${STDDEV} ≤ 0.01)"
-            echo "        Baseline had variation but dimmed is solid — GammaCurveEffect shader bug"
-            kill "${GS_PID}" 2>/dev/null || true
-            exit 1
-        fi
-        echo "  PASS: screen has pixel variation — not solid colour"
+# Trigger dimming and verify the extension logs it (always runs)
+GSETTINGS_SCHEMA_DIR="${SCHEMA_DIR}" \
+    gsettings set "${SCHEMA_ID}" current-brightness 0.5
+sleep 3
 
-        # Visual check B: dimmed screenshot must be darker than the baseline.
-        MEAN_BASE=$(convert "${SCREEN_BASE}" -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
-        MEAN_DIMMED=$(convert "${SCREEN_DIMMED}" -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
-        echo "  Visual: mean brightness baseline=${MEAN_BASE} dimmed=${MEAN_DIMMED}"
-        DIMMED_OK=$(awk "BEGIN { print (${MEAN_DIMMED} < ${MEAN_BASE} * 0.90) ? \"yes\" : \"no\" }")
-        if [ "${DIMMED_OK}" = "no" ]; then
-            echo "  FAIL: dimming not detected — mean(dimmed)=${MEAN_DIMMED} not below mean(base)=${MEAN_BASE}"
-            kill "${GS_PID}" 2>/dev/null || true
-            exit 1
-        fi
-        echo "  PASS: screen is measurably dimmer at brightness=0.5"
+if grep -q "current-brightness=0.5\|_on_brightness_change.*0.5\|show(0.5\|show.*brightness.*0.5" "${LOG}" 2>/dev/null; then
+    echo "  PASS: extension log confirms brightness change was applied"
+else
+    if grep -q "OverlayManager\|GammaCurveEffect\|soft-brightness.*show\|_on_brightness" "${LOG}" 2>/dev/null; then
+        echo "  PASS: extension log shows overlay activity"
+    else
+        echo "  WARN: could not confirm brightness change in log"
+        grep -i "brightness\|overlay\|shader" "${LOG}" 2>/dev/null | tail -10 || true
     fi
+fi
+
+if [ "${PIXEL_CHECKS}" = "true" ]; then
+    if ! gjs /grab-frame.js "${SCREEN_DIMMED}" auto; then
+        pixel_capture_failed "screencast dimmed capture failed"
+    fi
+fi
+
+if [ "${PIXEL_CHECKS}" = "true" ]; then
+    # Visual check A: dimmed screenshot must NOT be solid colour.
+    # The shader-on-stage bug produces stddev ≈ 0 (all pixels same grey value).
+    # The gradient baseline (checked above) guarantees this is a real signal.
+    STDDEV=$(convert "${SCREEN_DIMMED}" -alpha off -colorspace Gray -format "%[fx:standard_deviation]" info: 2>/dev/null || echo "0")
+    echo "  Visual: dimmed screenshot stddev=${STDDEV}"
+    STDDEV_OK=$(awk "BEGIN { print (${STDDEV} > 0.01) ? \"yes\" : \"no\" }")
+    if [ "${STDDEV_OK}" = "no" ]; then
+        echo "  FAIL: solid-colour screen after dimming (stddev=${STDDEV} ≤ 0.01)"
+        echo "        Baseline had variation but dimmed is solid — GammaCurveEffect shader bug"
+        kill "${GS_PID}" 2>/dev/null || true
+        exit 1
+    fi
+    echo "  PASS: screen has pixel variation — not solid colour"
+
+    # Visual check B: dimmed screenshot must be darker than the baseline.
+    MEAN_DIMMED=$(convert "${SCREEN_DIMMED}" -alpha off -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
+    echo "  Visual: mean brightness baseline=${MEAN_BASE} dimmed=${MEAN_DIMMED}"
+    DIMMED_OK=$(awk "BEGIN { print (${MEAN_DIMMED} < ${MEAN_BASE} * 0.90) ? \"yes\" : \"no\" }")
+    if [ "${DIMMED_OK}" = "no" ]; then
+        echo "  FAIL: dimming not detected — mean(dimmed)=${MEAN_DIMMED} not below 0.90*mean(base)=${MEAN_BASE}"
+        kill "${GS_PID}" 2>/dev/null || true
+        exit 1
+    fi
+    echo "  PASS: screen is measurably dimmer at brightness=0.5"
 fi
 
 kill "${GS_PID}" 2>/dev/null || true
 wait "${GS_PID}" 2>/dev/null || true
 kill "${LOGIND_PID}" 2>/dev/null || true
+kill "${WIREPLUMBER_PID}" "${PIPEWIRE_PID}" 2>/dev/null || true
 echo "  PASS: ${MODE} test complete"
 INNER

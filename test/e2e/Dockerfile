@@ -14,6 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     imagemagick \
     x11-utils \
+    pipewire \
+    wireplumber \
+    gstreamer1.0-pipewire \
+    gstreamer1.0-tools \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -ms /bin/bash tester && \
@@ -25,6 +31,7 @@ RUN useradd -ms /bin/bash tester && \
 
 COPY run-test.sh /run-test.sh
 COPY fake-logind.js /fake-logind.js
+COPY grab-frame.js /grab-frame.js
 RUN chmod +x /run-test.sh
 
 USER tester

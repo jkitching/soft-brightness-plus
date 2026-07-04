@@ -15,6 +15,12 @@ RUN dnf -y copr enable frantisekz/GNOME-X11 && dnf -y update && \
         unzip \
         ImageMagick \
         xwininfo \
+        pipewire \
+        wireplumber \
+        pipewire-gstreamer \
+        gstreamer1 \
+        gstreamer1-plugins-base \
+        gstreamer1-plugins-good \
         && \
     dnf clean all
 
@@ -26,6 +32,7 @@ RUN useradd -ms /bin/bash tester && \
 
 COPY run-test.sh /run-test.sh
 COPY fake-logind.js /fake-logind.js
+COPY grab-frame.js /grab-frame.js
 RUN chmod +x /run-test.sh
 
 USER tester
