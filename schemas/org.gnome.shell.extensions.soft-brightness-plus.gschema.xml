@@ -82,12 +82,12 @@
     <key name="shader-gamma" type="d">
       <range min="1.0" max="4.0"/>
       <default>2.0</default>
-      <summary>Shadow preservation.</summary>
-      <description>How dimming treats dark areas. At 1.0 the screen scales
-      down uniformly like a hardware backlight (contrast preserved). At 4.0
-      dark areas are left untouched and only bright areas are toned down to
-      the brightness level (lower contrast at strong dimming). Values in
-      between blend the two.</description>
+      <summary>Highlight compression.</summary>
+      <description>Extra dimming applied to bright areas on top of the
+      backlight-like brightness scaling. At 1.0 the screen dims uniformly
+      (contrast preserved). Higher values pull bright areas down further:
+      pure white ends up at the brightness level divided by this value,
+      while dark and mid tones keep normal backlight dimming.</description>
     </key>
   </schema>
 </schemalist>

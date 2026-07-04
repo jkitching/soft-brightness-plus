@@ -34,16 +34,14 @@ import * as Logger from './logger.js';
 import * as Utils from './utils.js';
 import { MouseSpriteContent } from './cursor.js';
 
-// Blended GLSL dimming effect: interpolates between backlight-like
-// linear scaling and shadow-preserving highlight compression.
-//   linear: out = b * c — contrast ratios preserved, like a hardware
-//           backlight; blacks stay black, everything scales down.
-//   cap:    out = c * (1 + ((1/b)^4 - 1) * c^4)^(-1/4) — darks are
-//           untouched (slope 1 at c=0), brights soft-clamped to b.
-//   out = mix(linear, cap, t), t = (gamma_k - 1) / 3
-// gamma_k is the "Shadow preservation" slider (1..4):
-//   1 → pure backlight-like; 4 → darks kept, highlights capped at b.
-// Pure white maps to b at every slider position; b = 1 → identity.
+// Backlight-with-highlight-compression GLSL dimming effect.
+//   out = b * c * (1 + (k^4 - 1) * c^4)^(-1/4)
+// where b = brightness and k = gamma_k ("Highlight compression", 1..4).
+// The curve follows plain backlight dimming (out = b * c) for shadows
+// and mids, then veers down so pure white lands at b/k instead of b —
+// the veer point moves left automatically as k grows.  k = 1 is exactly
+// out = b * c (no compression); the shape was fitted to a hand-tuned
+// curve from tools/curve-editor.py.
 //
 // monitorRects: [{x,y,w,h}] in UV [0,1] actor-local space.
 //   Empty (length 0) → dim the entire actor.
@@ -113,11 +111,10 @@ const GammaCurveEffect = GObject.registerClass(
                         vec3 curved = vec3(sbp_lut(c.r), sbp_lut(c.g), sbp_lut(c.b));
                         c = min(c, s * curved);
                     } else {
-                        float b = clamp(u_brightness, 0.01, 1.0);
-                        float t = clamp((u_gamma_k - 1.0) / 3.0, 0.0, 1.0);
-                        float a = pow(1.0 / b, 4.0) - 1.0;
-                        vec3 cap = c * pow(1.0 + a * pow(c, vec3(4.0)), vec3(-0.25));
-                        c = mix(b * c, cap, t);
+                        float b = clamp(u_brightness, 0.0, 1.0);
+                        float k = clamp(u_gamma_k, 1.0, 4.0);
+                        float a = pow(k, 4.0) - 1.0;
+                        c = b * c * pow(1.0 + a * pow(c, vec3(4.0)), vec3(-0.25));
                     }
                 }
                 cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_out.a);
