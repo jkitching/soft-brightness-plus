@@ -105,7 +105,11 @@ const GammaCurveEffect = GObject.registerClass(
                 }
                 if (dim) {
                     if (u_lut_on > 0.5) {
-                        c = vec3(sbp_lut(c.r), sbp_lut(c.g), sbp_lut(c.b));
+                        // LUT = dimming shape at full strength; the
+                        // brightness slider blends identity <-> LUT.
+                        float t = 1.0 - clamp(u_brightness, 0.0, 1.0);
+                        vec3 curved = vec3(sbp_lut(c.r), sbp_lut(c.g), sbp_lut(c.b));
+                        c = mix(c, curved, t);
                     } else {
                         float b = clamp(u_brightness, 0.01, 1.0);
                         float t = clamp((u_gamma_k - 1.0) / 3.0, 0.0, 1.0);

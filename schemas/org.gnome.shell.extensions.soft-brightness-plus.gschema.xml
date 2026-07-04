@@ -70,10 +70,12 @@
       <default>''</default>
       <summary>Debug dimming-curve override (LUT).</summary>
       <description>For experimentation only; no UI. When non-empty, replaces
-      the dimming formula with a lookup table: comma-separated output values
-      (0..1) for evenly spaced input values from 0 to 1, at least 2 samples.
-      Edit interactively with tools/curve-editor.py. Set to the empty string
-      to return to formula-based dimming.</description>
+      the dimming formula: a lookup table of comma-separated output values
+      (0..1) for evenly spaced input values from 0 to 1, at least 2 samples,
+      defining the dimming shape at full strength. The brightness slider
+      blends between no dimming (1.0) and this curve. Edit interactively
+      with tools/curve-editor.py. Set to the empty string to return to
+      formula-based dimming.</description>
     </key>
 
     <key name="shader-gamma" type="d">

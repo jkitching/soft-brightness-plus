@@ -5,6 +5,11 @@
 # drag, so the screen updates in real time (the extension must be
 # enabled and brightness below 1.0 for dimming to be active).
 #
+# The curve defines the dimming shape at FULL strength; the extension's
+# brightness slider blends between no dimming (slider at max) and this
+# curve (slider at min), so the slider keeps working while a curve is
+# active.  Design with the slider near minimum to see the pure curve.
+#
 #   - drag points to shape the curve (monotone cubic interpolation)
 #   - double-click on the curve to add a point
 #   - right-click a point to remove it
