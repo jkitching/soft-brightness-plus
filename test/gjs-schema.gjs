@@ -47,7 +47,7 @@ const EXPECTED_KEYS = {
     'clone-mouse': 'b',
     'debug': 'b',
     'shader-gamma': 'd',
-    'per-workspace-brightness': 'b',
+    'debug-curve': 's',
     'brightness-up': 'as',
     'brightness-down': 'as',
 };

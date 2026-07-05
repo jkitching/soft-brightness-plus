@@ -7,6 +7,7 @@ const m = (f) => pathToFileURL(path.join(__dirname, 'mocks', f)).href;
 const MAP = {
     'gi://GLib':    m('glib.mjs'),
     'gi://Gio':     m('gio.mjs'),
+    'gi://Cogl':    m('cogl.mjs'),
     'gi://GObject': m('gobject.mjs'),
     'gi://Clutter': m('clutter.mjs'),
     'gi://Meta':    m('meta.mjs'),

@@ -3,21 +3,60 @@ class Actor {
     constructor(props = {}) {
         Object.assign(this, props);
         this._children = [];
+        this._parent = null;
+        this._connections = [];
+        this._nextHandlerId = 1;
+        this._effects = [];
         this.opacity = 255;
         this._position = [0, 0];
         this._size = [0, 0];
     }
-    add_child(c) { this._children.push(c); }
-    remove_child(c) { this._children = this._children.filter(x => x !== c); }
+    connect(signal, fn) {
+        const id = this._nextHandlerId++;
+        this._connections.push({ id, signal, fn });
+        return id;
+    }
+    disconnect(id) {
+        this._connections = this._connections.filter(c => c.id !== id);
+    }
+    // Clutter delivers (emitter, ...args) to handlers.
+    emit(signal, ...args) {
+        for (const c of [...this._connections]) {
+            if (c.signal === signal) c.fn(this, ...args);
+        }
+    }
+    add_child(c) {
+        this._children.push(c);
+        c._parent = this;
+        this.emit('child-added', c);
+    }
+    remove_child(c) {
+        this._children = this._children.filter(x => x !== c);
+        if (c._parent === this) c._parent = null;
+        this.emit('child-removed', c);
+    }
+    get_children() { return [...this._children]; }
     get_n_children() { return this._children.length; }
     get_child_at_index(i) { return this._children[i]; }
+    get_last_child() { return this._children[this._children.length - 1] ?? null; }
+    set_child_above_sibling(child, sibling) {
+        this._children = this._children.filter(x => x !== child);
+        if (sibling == null) {
+            this._children.push(child);
+        } else {
+            this._children.splice(this._children.indexOf(sibling) + 1, 0, child);
+        }
+    }
+    get_parent() { return this._parent; }
+    add_effect_with_name(name, effect) { this._effects.push({ name, effect }); }
+    remove_effect(effect) { this._effects = this._effects.filter(e => e.effect !== effect); }
+    get_effects() { return this._effects.map(e => e.effect); }
     set_position(x, y) { this._position = [x, y]; }
     set_size(w, h) { this._size = [w, h]; }
     set(props) { Object.assign(this, props); }
     show() { this.visible = true; }
     hide() { this.visible = false; }
-    destroy() {}
-    get_parent() { return null; }
+    destroy() { this.emit('destroy'); }
 }
 
 export const invalidateCalls = [];

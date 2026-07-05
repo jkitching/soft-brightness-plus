@@ -8,6 +8,8 @@ export function makeSettings(overrides = {}) {
         'use-backlight': false,
         'prevent-unredirect': 'when-correcting',
         'clone-mouse': false,
+        'shader-gamma': 1.0,
+        'debug-curve': '',
         ...overrides,
     };
     const listeners = new Map();

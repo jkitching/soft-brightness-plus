@@ -7,6 +7,9 @@ let _listenerIdCounter = 1;
 const mockStage = new StMock.Widget();
 mockStage._parent = mockStage; // stage is its own parent for testing
 
+const mockUiGroup = new StMock.Widget();
+mockUiGroup.name = 'uiGroup';
+
 export const _state = {
     monitors: [{ x: 0, y: 0, width: 1920, height: 1080 }],
     primaryIndex: 0,
@@ -54,32 +57,61 @@ const mockQuickSettings = {
     },
 };
 
+// The real main.js is consumed via `import * as Main`, so everything the
+// extension touches must be a NAMED export. The default export mirrors the
+// same objects for tests that import the mock directly.
+export const layoutManager = {
+    get monitors() { return _state.monitors; },
+    get primaryIndex() { return _state.primaryIndex; },
+    connect(signal, fn) {
+        const id = _listenerIdCounter++;
+        layoutManagerListeners.set(id, { signal, fn });
+        return id;
+    },
+    disconnect(id) {
+        layoutManagerListeners.delete(id);
+    },
+    _fireMonitorsChanged() {
+        for (const { signal, fn } of layoutManagerListeners.values()) {
+            if (signal === 'monitors-changed') fn();
+        }
+    },
+};
+
+export const panel = {
+    statusArea: {
+        quickSettings: mockQuickSettings,
+    },
+};
+
+export const sessionMode = {
+    get currentMode() { return _state.sessionMode; },
+};
+
+export let brightnessManager; // undefined; GNOME 49+ path overrides in tests
+
+export { mockUiGroup as uiGroup, mockStage as stage };
+
+function _makeBrightnessReady() {
+    mockQuickSettings._brightness = { quickSettingsItems: [mockBrightnessQuickSettingsItem] };
+}
+
+function _reset() {
+    layoutManagerListeners.clear();
+    _state.monitors = [{ x: 0, y: 0, width: 1920, height: 1080 }];
+    _state.primaryIndex = 0;
+    mockQuickSettings._brightness = null;
+    mockSlider.value = 1.0;
+    mockSlider._connections = [];
+    mockUiGroup._children = [];
+    mockUiGroup._connections = [];
+}
+
 export default {
-    layoutManager: {
-        get monitors() { return _state.monitors; },
-        get primaryIndex() { return _state.primaryIndex; },
-        connect(signal, fn) {
-            const id = _listenerIdCounter++;
-            layoutManagerListeners.set(id, { signal, fn });
-            return id;
-        },
-        disconnect(id) {
-            layoutManagerListeners.delete(id);
-        },
-        _fireMonitorsChanged() {
-            for (const { signal, fn } of layoutManagerListeners.values()) {
-                if (signal === 'monitors-changed') fn();
-            }
-        },
-    },
-    panel: {
-        statusArea: {
-            quickSettings: mockQuickSettings,
-        },
-    },
-    sessionMode: {
-        get currentMode() { return _state.sessionMode; },
-    },
+    uiGroup: mockUiGroup,
+    layoutManager,
+    panel,
+    sessionMode,
     brightnessManager: undefined, // override in tests for GNOME 49+ path
 
     // Test helpers
@@ -87,17 +119,6 @@ export default {
     _mockBrightnessIndicator: mockBrightnessIndicator,
     _mockQuickSettings: mockQuickSettings,
     _mockGridContainer: mockGridContainer,
-    _makeBrightnessReady() {
-        mockQuickSettings._brightness = { quickSettingsItems: [mockBrightnessQuickSettingsItem] };
-    },
-    _reset() {
-        layoutManagerListeners.clear();
-        _state.monitors = [{ x: 0, y: 0, width: 1920, height: 1080 }];
-        _state.primaryIndex = 0;
-        mockQuickSettings._brightness = null;
-        mockSlider.value = 1.0;
-        mockSlider._connections = [];
-    },
+    _makeBrightnessReady,
+    _reset,
 };
-
-export { mockStage as stage };

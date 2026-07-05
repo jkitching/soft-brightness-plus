@@ -51,10 +51,10 @@ import { MouseSpriteContent } from './cursor.js';
 // _getDebugCurveLut), the formula is bypassed and each channel is mapped
 // through a CURVE_LUT_SIZE-entry table with linear interpolation —
 // arbitrary curve shapes for experimentation (tools/curve-editor.py).
-const MAX_SHADER_MONITORS = 4;
-const CURVE_LUT_SIZE = 32;
+export const MAX_SHADER_MONITORS = 4;
+export const CURVE_LUT_SIZE = 32;
 
-const GammaCurveEffect = GObject.registerClass(
+export const GammaCurveEffect = GObject.registerClass(
     class GammaCurveEffect extends Shell.GLSLEffect {
         _init(brightness, gammaK, monitorRects, curveLut = null) {
             super._init();
@@ -381,7 +381,7 @@ export default class SoftBrightnessExtension extends Extension {
 }
 
 // Monkey-patched screenshot methods
-class ScreenshotManager {
+export class ScreenshotManager {
     constructor(logger) {
         this._logger = logger;
 
@@ -1038,7 +1038,7 @@ class CursorManager {
 // MetaWindowActor from global.get_window_actors(). MetaWindowActors paint via
 // the standard Clutter path (texture upload + draw), so FBO redirection works.
 // Other stage children (background, UI groups) are still covered per-child.
-class OverlayManager {
+export class OverlayManager {
     constructor(logger, settings, monitorManager) {
         this._logger = logger;
         this._settings = settings;
@@ -1313,7 +1313,7 @@ class OverlayManager {
 }
 
 // Monitor change handling
-class MonitorManager {
+export class MonitorManager {
     constructor(logger, settings, extPath) {
         this._logger = logger;
         this._settings = settings;
