@@ -42,41 +42,6 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
         {
             const group = new Adw.PreferencesGroup();
 
-            this.title_label = new Gtk.Label({
-                use_markup: true,
-                label: '<span size="large" weight="heavy">' +
-                    _('Soft Brightness Plus') + '</span>',
-                hexpand: true,
-                halign: Gtk.Align.CENTER,
-            });
-            group.add(this.title_label);
-
-            const versionString = this._metadata['version'] + ' / git ' + this._metadata['vcs_revision'];
-            this.version_label = new Gtk.Label({
-                use_markup: true,
-                label: '<span size="small">' + _('Version') +
-                    ' ' + versionString + '</span>',
-                hexpand: true,
-                halign: Gtk.Align.CENTER,
-            });
-            group.add(this.version_label);
-
-            this.link_label = new Gtk.Label({
-                use_markup: true,
-                label: '<span size="small"><a href="' + this._metadata.url + '">' +
-                    this._metadata.url + '</a></span>',
-                hexpand: true,
-                halign: Gtk.Align.CENTER,
-                margin_bottom: this.margin_bottom,
-            });
-            group.add(this.link_label);
-
-            this.add(group);
-        }
-
-        {
-            const group = new Adw.PreferencesGroup();
-
             this.enabled_control = new Adw.SwitchRow({
                 title: _('Control overlay brightness independently'),
                 subtitle: _('Show a separate slider in the quick settings menu.'),
@@ -153,34 +118,9 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             }
             group.add(this.min_brightness_control);
 
-            this.shader_gamma_control = new Adw.ActionRow({
-                title: _('Highlight compression (1.0–4.0):'),
-                subtitle: this._getDescription('shader-gamma'),
-            });
-            {
-                const scale = new Gtk.Scale({
-                    orientation: Gtk.Orientation.HORIZONTAL,
-                    adjustment: new Gtk.Adjustment({
-                        lower: 1.0, upper: 4.0,
-                        step_increment: 0.1, page_increment: 0.5,
-                        value: this._settings.get_double('shader-gamma'),
-                    }),
-                    digits: 1,
-                    draw_value: true,
-                    value_pos: Gtk.PositionType.RIGHT,
-                    hexpand: true,
-                    width_request: 200,
-                    valign: Gtk.Align.CENTER,
-                });
-                scale.connect('value-changed', () => {
-                    this._settings.set_double('shader-gamma', scale.get_value());
-                });
-                this._settings.connect('changed::shader-gamma', () => {
-                    scale.set_value(this._settings.get_double('shader-gamma'));
-                });
-                this.shader_gamma_control.add_suffix(scale);
-            }
-            group.add(this.shader_gamma_control);
+            // The shader-gamma ("highlight compression") setting is
+            // intentionally not exposed here: the compression curve is
+            // still being tuned. The gsettings key remains functional.
 
             this.clone_mouse_control = new Adw.SwitchRow({
                 title: _('Mouse cursor brightness control:'),
@@ -213,6 +153,25 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
 
         {
             const group = new Adw.PreferencesGroup();
+
+            const versionString = this._metadata['version'] + ' / git ' + this._metadata['vcs_revision'];
+            this.version_label = new Gtk.Label({
+                use_markup: true,
+                label: '<span size="small">' + _('Version') +
+                    ' ' + versionString + '</span>',
+                hexpand: true,
+                halign: Gtk.Align.CENTER,
+            });
+            group.add(this.version_label);
+
+            this.link_label = new Gtk.Label({
+                use_markup: true,
+                label: '<span size="small"><a href="' + this._metadata.url + '">' +
+                    this._metadata.url + '</a></span>',
+                hexpand: true,
+                halign: Gtk.Align.CENTER,
+            });
+            group.add(this.link_label);
 
             const copyright1 = new Gtk.Label({
                 use_markup: true,
