@@ -1,0 +1,48 @@
+# Parameterized e2e image: builds on the prebuilt GNOME containers from
+# https://github.com/jkitching/x11docker-gnome (docker.io/jkitching/gnome-shell-XY),
+# where Fedora N consistently maps to GNOME N. Only the e2e test tooling is
+# added on top.
+#
+# Build: docker build --build-arg GNOME_VERSION=49 -f Dockerfile.fedora .
+#
+# X11 note: GNOME 49 removed X11 session support upstream; stock images for
+# 49+ are wayland-only and e2e.sh skips the x11 lane there. The x11 lane runs
+# on GNOME <= 48 images, where stock Fedora still ships the X11 session.
+ARG GNOME_VERSION=46
+FROM docker.io/jkitching/gnome-shell-${GNOME_VERSION}
+
+USER root
+
+RUN dnf -y update && \
+    dnf -y install \
+        gjs \
+        xorg-x11-server-Xvfb \
+        dbus \
+        dbus-x11 \
+        unzip \
+        ImageMagick \
+        pipewire \
+        wireplumber \
+        pipewire-gstreamer \
+        gstreamer1 \
+        gstreamer1-plugins-base \
+        gstreamer1-plugins-good \
+        && \
+    dnf clean all
+
+RUN useradd -ms /bin/bash tester && \
+    mkdir -p /tmp/runtime-tester /tmp/.X11-unix && \
+    chown tester:tester /tmp/runtime-tester && \
+    chmod 700 /tmp/runtime-tester && \
+    chmod 1777 /tmp/.X11-unix
+
+COPY run-test.sh /run-test.sh
+COPY fake-logind.js /fake-logind.js
+COPY grab-frame.js /grab-frame.js
+RUN chmod +x /run-test.sh
+
+USER tester
+ENV HOME=/home/tester
+ENV XDG_RUNTIME_DIR=/tmp/runtime-tester
+ENV NO_AT_BRIDGE=1
+WORKDIR /home/tester

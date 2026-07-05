@@ -235,6 +235,26 @@ if [ "${PIXEL_CHECKS}" = "true" ]; then
         exit 1
     fi
     echo "  PASS: screen is measurably dimmer at brightness=0.5"
+
+    # Visual check C: shell chrome (top bar) should dim too. The shader is
+    # currently known NOT to dim chrome: window_group lives inside uiGroup,
+    # and the uiGroup-level effect does not render its dimming, so only
+    # window actors and stage-level children darken. WARN-only until chrome
+    # dimming is implemented — then flip this to a hard FAIL.
+    BAR_BASE=$(convert "${SCREEN_BASE}" -alpha off -crop 1920x28+0+0 -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
+    BAR_DIMMED=$(convert "${SCREEN_DIMMED}" -alpha off -crop 1920x28+0+0 -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
+    echo "  Visual: top-bar mean baseline=${BAR_BASE} dimmed=${BAR_DIMMED}"
+    BAR_MEASURABLE=$(awk "BEGIN { print (${BAR_BASE} > 0.005) ? \"yes\" : \"no\" }")
+    if [ "${BAR_MEASURABLE}" = "no" ]; then
+        echo "  INFO: top bar has no measurable brightness — skipping chrome check"
+    else
+        BAR_OK=$(awk "BEGIN { print (${BAR_DIMMED} < ${BAR_BASE} * 0.95) ? \"yes\" : \"no\" }")
+        if [ "${BAR_OK}" = "yes" ]; then
+            echo "  PASS: shell chrome (top bar) is dimmed"
+        else
+            echo "  WARN: shell chrome (top bar) is NOT dimmed — known gap in the shader path"
+        fi
+    fi
 fi
 
 kill "${GS_PID}" 2>/dev/null || true

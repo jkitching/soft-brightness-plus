@@ -18,7 +18,7 @@ MO_FILES := $(addprefix $(BUILD_DIR)/locale/,$(addsuffix /LC_MESSAGES/$(DOMAIN).
 # Derive VCS tag from git (falls back to "unknown")
 VCS_TAG := $(shell git describe --tags --long --always 2>/dev/null || echo unknown)
 
-.PHONY: all zip dist install clean test test-e2e screenshot
+.PHONY: all zip dist install clean test test-e2e test-e2e-gnome49 screenshot
 
 all: $(BUILD_DIR)/metadata.json $(BUILD_DIR)/schemas/gschemas.compiled $(MO_FILES)
 
@@ -86,6 +86,10 @@ test: all
 # ── e2e (container) tests ─────────────────────────────────────────────────────
 test-e2e: zip
 	test/e2e.sh
+
+# GNOME 49 (wayland-only: GNOME 49+ has no X11 session)
+test-e2e-gnome49: zip
+	GNOME_VERSION=49 test/e2e.sh
 
 # ── screenshot (container) ────────────────────────────────────────────────────
 screenshot: zip

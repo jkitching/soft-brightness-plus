@@ -44,10 +44,17 @@ jobs:
           name: extension-zip
           path: build/extension.zip
 
+  # Images build on docker.io/jkitching/gnome-shell-XY (x11docker-gnome;
+  # Fedora N = GNOME N). The x11 lane runs only where stock GNOME still
+  # ships an X11 session (< 49); e2e.sh skips it automatically elsewhere.
   e2e:
     runs-on: ubuntu-latest
-    name: E2E (container)
+    name: E2E GNOME ${{ matrix.gnome }}
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        gnome: [46, 49]
     steps:
       - uses: actions/checkout@v4
 
@@ -58,38 +65,4 @@ jobs:
           path: build/
 
       - name: Run E2E tests
-        run: test/e2e.sh
-
-  e2e-gnome49:
-    runs-on: ubuntu-latest
-    name: E2E GNOME 49 (Fedora 43)
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download extension zip
-        uses: actions/download-artifact@v4
-        with:
-          name: extension-zip
-          path: build/
-
-      - name: Build GNOME 49 test image
-        run: |
-          DOCKER_BUILDKIT=1 docker build \
-            -t sbp-e2e-gnome49 \
-            -f test/e2e/Dockerfile.gnome49 \
-            test/e2e/
-
-      - name: Run E2E tests (GNOME 49, wayland)
-        run: |
-          docker run --rm \
-            -v "$PWD/build/extension.zip:/ext.zip:ro" \
-            sbp-e2e-gnome49 \
-            /run-test.sh wayland
-
-      - name: Run E2E tests (GNOME 49, x11)
-        run: |
-          docker run --rm \
-            -v "$PWD/build/extension.zip:/ext.zip:ro" \
-            sbp-e2e-gnome49 \
-            /run-test.sh x11
+        run: GNOME_VERSION=${{ matrix.gnome }} test/e2e.sh
