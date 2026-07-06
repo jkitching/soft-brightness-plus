@@ -1,8 +1,15 @@
 #!/usr/bin/env gjs
-// Registers a minimal org.freedesktop.login1 stub on the system D-Bus.
-// Needed in Docker containers where no logind daemon is running.
-// gnome-shell connects to logind during background init; without this
-// it throws an uncaught exception that triggers a C-level heap corruption.
+// Registers minimal org.freedesktop.login1 and org.freedesktop.locale1
+// stubs on the system D-Bus. Needed in Docker containers where no systemd
+// daemons are running.
+//
+// - login1: gnome-shell connects to logind during background init; without
+//   this it throws an uncaught exception that triggers a C-level heap
+//   corruption.
+// - locale1: libgnome-desktop queries systemd-localed for the default
+//   keyboard input sources at startup; on GNOME 45 and 47 a missing
+//   locale1 service makes on_got_localed_proxy_for_getting_default_
+//   input_sources() segfault (46/48/49 tolerate its absence).
 
 const { GLib, Gio } = imports.gi;
 
@@ -51,6 +58,49 @@ Gio.bus_own_name(
     'org.freedesktop.login1',
     Gio.BusNameOwnerFlags.NONE,
     onBusAcquired,
+    null,
+    null
+);
+
+const LOCALE_XML = `
+<node>
+  <interface name="org.freedesktop.locale1">
+    <property name="Locale" type="as" access="read"/>
+    <property name="X11Layout" type="s" access="read"/>
+    <property name="X11Model" type="s" access="read"/>
+    <property name="X11Variant" type="s" access="read"/>
+    <property name="X11Options" type="s" access="read"/>
+    <property name="VConsoleKeymap" type="s" access="read"/>
+    <property name="VConsoleKeymapToggle" type="s" access="read"/>
+  </interface>
+</node>`;
+
+const LOCALE_PROPS = {
+    'Locale': new GLib.Variant('as', ['LANG=C.UTF-8']),
+    'X11Layout': new GLib.Variant('s', 'us'),
+    'X11Model': new GLib.Variant('s', ''),
+    'X11Variant': new GLib.Variant('s', ''),
+    'X11Options': new GLib.Variant('s', ''),
+    'VConsoleKeymap': new GLib.Variant('s', 'us'),
+    'VConsoleKeymapToggle': new GLib.Variant('s', ''),
+};
+
+function onLocaleBusAcquired(conn) {
+    const iface = Gio.DBusNodeInfo.new_for_xml(LOCALE_XML).interfaces[0];
+    conn.register_object(
+        '/org/freedesktop/locale1',
+        iface,
+        () => {}, // no methods
+        (_conn, _sender, _path, _iface, prop) => LOCALE_PROPS[prop] ?? null,
+        null // no writable properties
+    );
+}
+
+Gio.bus_own_name(
+    Gio.BusType.SYSTEM,
+    'org.freedesktop.locale1',
+    Gio.BusNameOwnerFlags.NONE,
+    onLocaleBusAcquired,
     null,
     null
 );

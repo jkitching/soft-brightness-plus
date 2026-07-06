@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        gnome: [46, 49]
+        gnome: [45, 46, 47, 48, 49, 50]
     steps:
       - uses: actions/checkout@v4
 

@@ -1,5 +1,5 @@
 # Parameterized e2e image: builds on the prebuilt GNOME containers from
-# https://github.com/jkitching/x11docker-gnome (docker.io/jkitching/gnome-shell-XY),
+# https://github.com/jkitching/x11docker-gnome (ghcr.io/jkitching/gnome-shell-XY),
 # where Fedora N consistently maps to GNOME N. Only the e2e test tooling is
 # added on top.
 #
@@ -9,7 +9,8 @@
 # 49+ are wayland-only and e2e.sh skips the x11 lane there. The x11 lane runs
 # on GNOME <= 48 images, where stock Fedora still ships the X11 session.
 ARG GNOME_VERSION=46
-FROM docker.io/jkitching/gnome-shell-${GNOME_VERSION}
+ARG BASE_REGISTRY=ghcr.io/jkitching
+FROM ${BASE_REGISTRY}/gnome-shell-${GNOME_VERSION}
 
 USER root
 
