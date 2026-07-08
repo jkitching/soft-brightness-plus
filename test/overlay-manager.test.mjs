@@ -4,12 +4,8 @@ import assert from 'node:assert/strict';
 // These tests import the REAL extension code (via the gi:// mock loader in
 // hooks.mjs) rather than replicating logic. They cover the shader dimming
 // lifecycle: target selection, the settings-storm dedup guard, actor churn
-// (stage children, window creation/destruction), screenshot hiding, monitor
-// UV targeting and debug-LUT parsing.
-//
-// Deliberately NOT covered: the highlight-compression (shader-gamma) curve
-// behavior — the curve is still being tuned and its UI is hidden. Tests run
-// with shader-gamma = 1.0 (pure backlight-like scaling).
+// (stage children, window creation/destruction), screenshot hiding and
+// monitor UV targeting.
 
 import Clutter from './mocks/clutter.mjs';
 import Main from './mocks/main.mjs';
@@ -20,7 +16,6 @@ import {
     GammaCurveEffect,
     ScreenshotManager,
     MAX_SHADER_MONITORS,
-    CURVE_LUT_SIZE,
 } from '../src/extension.js';
 
 const Actor = Clutter.Actor;
@@ -272,47 +267,12 @@ describe('OverlayManager._getShaderMonitorRects()', () => {
     });
 });
 
-// ── debug curve LUT parsing ──────────────────────────────────────────────────
-
-describe('OverlayManager._getDebugCurveLut()', () => {
-    function lutFor(curve) {
-        const { om } = makeOverlay({ settings: { 'debug-curve': curve } });
-        return om._getDebugCurveLut();
-    }
-
-    test('empty setting → null (formula dimming applies)', () => {
-        assert.equal(lutFor(''), null);
-    });
-
-    test('fewer than 2 valid samples → null', () => {
-        assert.equal(lutFor('0.5'), null);
-        assert.equal(lutFor('garbage'), null);
-    });
-
-    test('two samples resample linearly to the full LUT', () => {
-        const lut = lutFor('0,1');
-        assert.equal(lut.length, CURVE_LUT_SIZE);
-        assert.equal(lut[0], 0);
-        assert.equal(lut[CURVE_LUT_SIZE - 1], 1);
-        for (let i = 1; i < lut.length; i++)
-            assert.ok(lut[i] >= lut[i - 1], 'monotonic for a linear ramp');
-    });
-
-    test('samples are clamped to [0, 1]', () => {
-        const lut = lutFor('-1,2');
-        assert.ok(lut.every(v => v >= 0 && v <= 1));
-        assert.equal(lut[0], 0);
-        assert.equal(lut[CURVE_LUT_SIZE - 1], 1);
-    });
-});
-
 // ── GammaCurveEffect uniform packing ─────────────────────────────────────────
-// (Curve *behavior* is intentionally untested — see header note.)
 
 describe('GammaCurveEffect uniforms', () => {
     test('packs brightness, monitor count and zero-padded rects', () => {
         const rect = { x: 0.25, y: 0, w: 0.5, h: 1 };
-        const e = new GammaCurveEffect(0.5, 1.0, [rect], null);
+        const e = new GammaCurveEffect(0.5, [rect]);
         e.vfunc_paint_target();
 
         assert.deepEqual(e._uniforms.u_brightness.values, [0.5]);
@@ -325,27 +285,14 @@ describe('GammaCurveEffect uniforms', () => {
 
     test('monitor count is clamped to MAX_SHADER_MONITORS', () => {
         const rects = Array.from({ length: 6 }, (_, i) => ({ x: i / 10, y: 0, w: 0.1, h: 1 }));
-        const e = new GammaCurveEffect(0.5, 1.0, rects, null);
+        const e = new GammaCurveEffect(0.5, rects);
         e.vfunc_paint_target();
         assert.deepEqual(e._uniforms.u_monitor_count.values, [MAX_SHADER_MONITORS]);
     });
 
-    test('LUT flag reflects presence of a debug curve', () => {
-        const noLut = new GammaCurveEffect(0.5, 1.0, [], null);
-        noLut.vfunc_paint_target();
-        assert.deepEqual(noLut._uniforms.u_lut_on.values, [0]);
-        assert.equal(noLut._uniforms.u_lut.values.length, CURVE_LUT_SIZE);
-
-        const lut = Array.from({ length: CURVE_LUT_SIZE }, (_, i) => i / (CURVE_LUT_SIZE - 1));
-        const withLut = new GammaCurveEffect(0.5, 1.0, [], lut);
-        withLut.vfunc_paint_target();
-        assert.deepEqual(withLut._uniforms.u_lut_on.values, [1]);
-        assert.deepEqual(withLut._uniforms.u_lut.values, lut);
-    });
-
     test('update() stores new parameters and queues a repaint', () => {
-        const e = new GammaCurveEffect(0.5, 1.0, [], null);
-        e.update(0.3, 1.0, [], null);
+        const e = new GammaCurveEffect(0.5, []);
+        e.update(0.3, []);
         assert.equal(e._repaints, 1);
         e.vfunc_paint_target();
         assert.deepEqual(e._uniforms.u_brightness.values, [0.3]);

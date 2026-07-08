@@ -34,57 +34,31 @@ import * as Logger from './logger.js';
 import * as Utils from './utils.js';
 import { MouseSpriteContent } from './cursor.js';
 
-// Backlight-with-highlight-compression GLSL dimming effect.
-//   out = b * c * (1 + (k^4 - 1) * c^4)^(-1/4)
-// where b = brightness and k = gamma_k ("Highlight compression", 1..4).
-// The curve follows plain backlight dimming (out = b * c) for shadows
-// and mids, then veers down so pure white lands at b/k instead of b —
-// the veer point moves left automatically as k grows.  k = 1 is exactly
-// out = b * c (no compression); the shape was fitted to a hand-tuned
-// curve from tools/curve-editor.py.
+// Backlight-like GLSL dimming effect: out = b * c, where b = brightness.
+// Contrast ratios are preserved, like a hardware backlight; blacks stay
+// black and everything scales down linearly.
 //
 // monitorRects: [{x,y,w,h}] in UV [0,1] actor-local space.
 //   Empty (length 0) → dim the entire actor.
 //   Non-empty → only dim pixels inside those rects (for built-in/external targeting).
-//
-// Debug curve override: when the debug-curve setting holds a LUT (see
-// _getDebugCurveLut), the formula is bypassed and each channel is mapped
-// through a CURVE_LUT_SIZE-entry table with linear interpolation —
-// arbitrary curve shapes for experimentation (tools/curve-editor.py).
 export const MAX_SHADER_MONITORS = 4;
-export const CURVE_LUT_SIZE = 32;
 
 export const GammaCurveEffect = GObject.registerClass(
     class GammaCurveEffect extends Shell.GLSLEffect {
-        _init(brightness, gammaK, monitorRects, curveLut = null) {
+        _init(brightness, monitorRects) {
             super._init();
             this._brightnessLoc = this.get_uniform_location('u_brightness');
-            this._gammaKLoc = this.get_uniform_location('u_gamma_k');
             this._monitorCountLoc = this.get_uniform_location('u_monitor_count');
             this._monitorRectsLoc = this.get_uniform_location('u_monitor_rects');
-            this._lutOnLoc = this.get_uniform_location('u_lut_on');
-            this._lutLoc = this.get_uniform_location('u_lut');
             this._brightness = brightness;
-            this._gammaK = gammaK;
             this._monitorRects = monitorRects || [];
-            this._curveLut = curveLut;
         }
 
         vfunc_build_pipeline() {
             const declarations = `
                 uniform float u_brightness;
-                uniform float u_gamma_k;
                 uniform float u_monitor_count;
                 uniform vec4  u_monitor_rects[${MAX_SHADER_MONITORS}];
-                uniform float u_lut_on;
-                uniform float u_lut[${CURVE_LUT_SIZE}];
-
-                float sbp_lut(float x) {
-                    float f = clamp(x, 0.0, 1.0) * ${CURVE_LUT_SIZE - 1}.0;
-                    int i = int(floor(f));
-                    int j = min(i + 1, ${CURVE_LUT_SIZE - 1});
-                    return mix(u_lut[i], u_lut[j], f - float(i));
-                }
             `;
             const src = `
                 vec3 c = clamp(cogl_color_out.rgb, 0.0, 1.0);
@@ -102,20 +76,7 @@ export const GammaCurveEffect = GObject.registerClass(
                     }
                 }
                 if (dim) {
-                    if (u_lut_on > 0.5) {
-                        // LUT = the mapping at 50% brightness; the slider
-                        // scales it proportionally (a straight line to
-                        // (1, 0.5) reproduces out = brightness * c exactly).
-                        // min() so scaling up never brightens above input.
-                        float s = clamp(u_brightness, 0.0, 1.0) * 2.0;
-                        vec3 curved = vec3(sbp_lut(c.r), sbp_lut(c.g), sbp_lut(c.b));
-                        c = min(c, s * curved);
-                    } else {
-                        float b = clamp(u_brightness, 0.0, 1.0);
-                        float k = clamp(u_gamma_k, 1.0, 4.0);
-                        float a = pow(k, 4.0) - 1.0;
-                        c = b * c * pow(1.0 + a * pow(c, vec3(4.0)), vec3(-0.25));
-                    }
+                    c = clamp(u_brightness, 0.0, 1.0) * c;
                 }
                 cogl_color_out = vec4(clamp(c, 0.0, 1.0), cogl_color_out.a);
             `;
@@ -124,7 +85,6 @@ export const GammaCurveEffect = GObject.registerClass(
 
         vfunc_paint_target(...args) {
             this.set_uniform_float(this._brightnessLoc, 1, [this._brightness]);
-            this.set_uniform_float(this._gammaKLoc, 1, [this._gammaK]);
             const count = Math.min(this._monitorRects.length, MAX_SHADER_MONITORS);
             this.set_uniform_float(this._monitorCountLoc, 1, [count]);
             const flat = [];
@@ -133,17 +93,12 @@ export const GammaCurveEffect = GObject.registerClass(
                 flat.push(r.x, r.y, r.w, r.h);
             }
             this.set_uniform_float(this._monitorRectsLoc, 4, flat);
-            this.set_uniform_float(this._lutOnLoc, 1, [this._curveLut ? 1 : 0]);
-            this.set_uniform_float(this._lutLoc, 1,
-                this._curveLut ?? new Array(CURVE_LUT_SIZE).fill(0));
             super.vfunc_paint_target(...args);
         }
 
-        update(brightness, gammaK, monitorRects, curveLut = null) {
+        update(brightness, monitorRects) {
             this._brightness = brightness;
-            this._gammaK = gammaK;
             this._monitorRects = monitorRects;
-            this._curveLut = curveLut;
             this.queue_repaint();
         }
     }
@@ -279,8 +234,6 @@ export default class SoftBrightnessExtension extends Extension {
             'changed::monitors': () => this._on_brightness_change(),
             'changed::builtin-monitor': () => this._on_brightness_change(),
             'changed::use-backlight': () => this._on_brightness_change(),
-            'changed::shader-gamma': () => this._on_brightness_change(),
-            'changed::debug-curve': () => this._on_brightness_change(),
             'changed::debug': () => this._on_debug_change(),
         }
         this._removeSettingsCallbacks = Object.entries(callbacks).map(
@@ -1168,12 +1121,10 @@ export class OverlayManager {
     }
 
     _applyShaderToActor(actor) {
-        const gammaK = this._settings.get_double('shader-gamma');
         const monitorRects = this._getShaderMonitorRects();
         if (monitorRects === null)
             return;
-        const effect = new GammaCurveEffect(this._currentBrightness, gammaK, monitorRects,
-            this._getDebugCurveLut());
+        const effect = new GammaCurveEffect(this._currentBrightness, monitorRects);
         actor.add_effect_with_name('soft-brightness-plus-shader', effect);
         const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
         this._shaderTargets.push({ actor, effect, destroyId });
@@ -1183,15 +1134,12 @@ export class OverlayManager {
     show(brightness) {
         this._currentBrightness = brightness;
 
-        const gammaK = this._settings.get_double('shader-gamma');
         const monitorRects = this._getShaderMonitorRects();
         if (monitorRects === null) {
             // Monitor selection matches nothing: dim nothing.
             this.hide();
             return;
         }
-        const curveString = this._settings.get_string('debug-curve');
-        const curveLut = this._getDebugCurveLut();
 
         // Build target list: stage children minus MetaWindowGroup (it cannot
         // be FBO-redirected), plus all MetaWindowActors (individual windows
@@ -1209,8 +1157,7 @@ export class OverlayManager {
         // Settings-change storms (e.g. prefs rewriting a key) re-invoke show()
         // with identical parameters many times per second; skip when nothing
         // would change.
-        const sig = brightness + '/' + gammaK + '/' + JSON.stringify(monitorRects)
-            + '/' + curveString;
+        const sig = brightness + '/' + JSON.stringify(monitorRects);
         if (sig === this._lastShowSig &&
             this._shaderTargets.length === targets.length &&
             this._shaderTargets.every((t, i) => t.actor === targets[i] && t.effect.enabled)) {
@@ -1236,38 +1183,15 @@ export class OverlayManager {
         this._shaderTargets = targets.map(actor => {
             if (existingMap.has(actor)) {
                 const effect = existingMap.get(actor);
-                effect.update(brightness, gammaK, monitorRects, curveLut);
+                effect.update(brightness, monitorRects);
                 effect.enabled = true;
                 return { actor, effect, destroyId: existingDestroyMap.get(actor) };
             }
-            const effect = new GammaCurveEffect(brightness, gammaK, monitorRects, curveLut);
+            const effect = new GammaCurveEffect(brightness, monitorRects);
             actor.add_effect_with_name('soft-brightness-plus-shader', effect);
             const destroyId = actor.connect('destroy', () => this._removeActorFromTargets(actor));
             return { actor, effect, destroyId };
         });
-    }
-
-    // Parses the debug-curve setting into a CURVE_LUT_SIZE-entry LUT, or
-    // null when unset/invalid (formula dimming applies).  The setting holds
-    // comma-separated output samples for evenly spaced inputs in [0,1];
-    // any sample count >= 2 is resampled to CURVE_LUT_SIZE linearly.
-    _getDebugCurveLut() {
-        const str = this._settings.get_string('debug-curve');
-        if (!str)
-            return null;
-        const samples = str.split(',').map(parseFloat).filter(v => Number.isFinite(v));
-        if (samples.length < 2) {
-            this._logger.log('debug-curve: fewer than 2 valid samples, ignoring');
-            return null;
-        }
-        const lut = [];
-        for (let i = 0; i < CURVE_LUT_SIZE; i++) {
-            const f = i / (CURVE_LUT_SIZE - 1) * (samples.length - 1);
-            const j = Math.min(Math.floor(f), samples.length - 2);
-            const v = samples[j] + (samples[j + 1] - samples[j]) * (f - j);
-            lut.push(Math.min(1, Math.max(0, v)));
-        }
-        return lut;
     }
 
     hide() {

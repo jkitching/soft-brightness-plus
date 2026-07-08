@@ -30,6 +30,7 @@ fi
 echo "Building test container image (GNOME ${GNOME_VERSION})..."
 docker build -t "${IMAGE}" \
     --build-arg "GNOME_VERSION=${GNOME_VERSION}" \
+    ${BASE_REGISTRY:+--build-arg "BASE_REGISTRY=${BASE_REGISTRY}"} \
     -f "${REPO_ROOT}/test/e2e/Dockerfile.fedora" \
     "${REPO_ROOT}/test/e2e/" --quiet
 

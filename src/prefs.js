@@ -118,10 +118,6 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             }
             group.add(this.min_brightness_control);
 
-            // The shader-gamma ("highlight compression") setting is
-            // intentionally not exposed here: the compression curve is
-            // still being tuned. The gsettings key remains functional.
-
             this.clone_mouse_control = new Adw.SwitchRow({
                 title: _('Mouse cursor brightness control:'),
                 subtitle: this._getDescription('clone-mouse'),

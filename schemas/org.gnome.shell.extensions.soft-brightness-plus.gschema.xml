@@ -65,29 +65,5 @@
       <summary>Debugging.</summary>
       <description>Enable debugging for the extension.</description>
     </key>
-
-    <key name="debug-curve" type="s">
-      <default>''</default>
-      <summary>Debug dimming-curve override (LUT).</summary>
-      <description>For experimentation only; no UI. When non-empty, replaces
-      the dimming formula: a lookup table of comma-separated output values
-      (0..1) for evenly spaced input values from 0 to 1, at least 2 samples,
-      defining the pixel mapping at 50% brightness. The brightness slider
-      scales the curve proportionally, clamped so pixels are never
-      brightened above their input value. Edit interactively with
-      tools/curve-editor.py. Set to the empty string to return to
-      formula-based dimming.</description>
-    </key>
-
-    <key name="shader-gamma" type="d">
-      <range min="1.0" max="4.0"/>
-      <default>2.0</default>
-      <summary>Highlight compression.</summary>
-      <description>Extra dimming applied to bright areas on top of the
-      backlight-like brightness scaling. At 1.0 the screen dims uniformly
-      (contrast preserved). Higher values pull bright areas down further:
-      pure white ends up at the brightness level divided by this value,
-      while dark and mid tones keep normal backlight dimming.</description>
-    </key>
   </schema>
 </schemalist>

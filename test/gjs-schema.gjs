@@ -46,8 +46,6 @@ const EXPECTED_KEYS = {
     'use-backlight': 'b',
     'clone-mouse': 'b',
     'debug': 'b',
-    'shader-gamma': 'd',
-    'debug-curve': 's',
     'brightness-up': 'as',
     'brightness-down': 'as',
 };
