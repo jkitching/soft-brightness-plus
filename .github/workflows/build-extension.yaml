@@ -44,7 +44,7 @@ jobs:
           name: extension-zip
           path: build/extension.zip
 
-  # Images build on docker.io/jkitching/gnome-shell-XY (x11docker-gnome;
+  # Images build on ghcr.io/jkitching/gnome-shell-XY (x11docker-gnome;
   # Fedora N = GNOME N). The x11 lane runs only where stock GNOME still
   # ships an X11 session (< 49); e2e.sh skips it automatically elsewhere.
   e2e:
@@ -63,6 +63,13 @@ jobs:
         with:
           name: extension-zip
           path: build/
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run E2E tests
         run: GNOME_VERSION=${{ matrix.gnome }} test/e2e.sh
