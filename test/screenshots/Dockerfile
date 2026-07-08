@@ -16,7 +16,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-dri \
     libglx-mesa0 \
     unzip \
+    librsvg2-common \
+    adwaita-icon-theme \
     && rm -rf /var/lib/apt/lists/*
+
+# --no-install-recommends skips the SVG pixbuf loader wiring; without a
+# rebuilt loader cache every symbolic icon renders as an empty pill.
+RUN /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders --update-cache
 
 RUN useradd -ms /bin/bash tester && \
     mkdir -p /tmp/runtime-tester /tmp/.X11-unix && \

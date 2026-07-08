@@ -241,8 +241,10 @@ if [ "${PIXEL_CHECKS}" = "true" ]; then
     # and the uiGroup-level effect does not render its dimming, so only
     # window actors and stage-level children darken. WARN-only until chrome
     # dimming is implemented — then flip this to a hard FAIL.
-    BAR_BASE=$(convert "${SCREEN_BASE}" -alpha off -crop 1920x28+0+0 -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
-    BAR_DIMMED=$(convert "${SCREEN_DIMMED}" -alpha off -crop 1920x28+0+0 -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
+    # x28 = full image width, top 28 rows: a measurement band over the top
+    # bar, independent of screen resolution.
+    BAR_BASE=$(convert "${SCREEN_BASE}" -alpha off -crop x28+0+0 -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
+    BAR_DIMMED=$(convert "${SCREEN_DIMMED}" -alpha off -crop x28+0+0 -colorspace Gray -format "%[fx:mean]" info: 2>/dev/null || echo "0")
     echo "  Visual: top-bar mean baseline=${BAR_BASE} dimmed=${BAR_DIMMED}"
     BAR_MEASURABLE=$(awk "BEGIN { print (${BAR_BASE} > 0.005) ? \"yes\" : \"no\" }")
     if [ "${BAR_MEASURABLE}" = "no" ]; then

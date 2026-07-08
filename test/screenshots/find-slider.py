@@ -2,44 +2,57 @@
 """
 Locate the Soft Brightness Plus slider in the GNOME Shell quick-settings
 panel via AT-SPI and print its screen bounding box: X Y W H
+
+Only sliders that are actually mapped on screen (STATE_SHOWING) with sane
+extents are considered: cally reports INT_MIN extents for unmapped actors,
+and several hidden sliders (OSD volume, the backlight brightness row) exist
+in the tree at all times. Prefers the extension's own slider, which sets
+accessible_name = 'Overlay Brightness'.
 """
 import sys
 import time
 import pyatspi
 
 
-def find_node(node, role_name, name_substr=None, depth=15):
-    if depth <= 0:
-        return None
+def iter_sliders(node, depth=15):
+    if depth <= 0 or node is None:
+        return
     try:
-        if node.getRoleName() == role_name:
-            if name_substr is None or name_substr.lower() in (node.name or '').lower():
-                return node
+        if node.getRoleName() == 'slider':
+            yield node
         for i in range(node.childCount):
-            result = find_node(node.getChildAtIndex(i), role_name, name_substr, depth - 1)
-            if result:
-                return result
+            yield from iter_sliders(node.getChildAtIndex(i), depth - 1)
     except Exception:
-        pass
-    return None
+        return
 
 
-def find_slider_row(node, depth=15):
-    """Find a slider and return its parent container (the whole row)."""
-    slider = find_node(node, 'slider', depth=depth)
-    if not slider:
+def visible_extents(node):
+    """Return (x, y, w, h) if the node is mapped with sane extents, else None."""
+    try:
+        if not node.getState().contains(pyatspi.STATE_SHOWING):
+            return None
+        b = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+        if b.width <= 0 or b.height <= 0 or b.x < 0 or b.y < 0:
+            return None
+        return (b.x, b.y, b.width, b.height)
+    except Exception:
         return None
+
+
+def row_extents(slider):
+    """Extents of the slider's row (parent with siblings) or the slider."""
     parent = slider.parent
-    # If parent has a label sibling, it's the row; otherwise use slider bounds
     if parent and parent.childCount >= 2:
-        return parent
-    return slider
+        ext = visible_extents(parent)
+        if ext:
+            return ext
+    return visible_extents(slider)
 
 
 time.sleep(1)
 desktop = pyatspi.Registry.getDesktop(0)
 
-row = None
+candidates = []  # (priority, extents)
 for app in desktop:
     if not app:
         continue
@@ -47,19 +60,25 @@ for app in desktop:
         name = (app.name or '').lower()
         if 'gnome-shell' not in name and 'mutter' not in name:
             continue
-        row = find_slider_row(app)
-        if row:
-            break
+        for slider in iter_sliders(app):
+            ext = row_extents(slider)
+            if not ext:
+                continue
+            sname = (slider.name or '').lower()
+            if 'overlay brightness' in sname:
+                priority = 0
+            elif 'brightness' in sname:
+                priority = 1
+            else:
+                priority = 2
+            candidates.append((priority, ext))
     except Exception:
         continue
 
-if not row:
-    print('no slider found', file=sys.stderr)
+if not candidates:
+    print('no visible slider found', file=sys.stderr)
     sys.exit(1)
 
-try:
-    bbox = row.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
-    print(f'{bbox.x} {bbox.y} {bbox.width} {bbox.height}')
-except Exception as e:
-    print(f'getExtents failed: {e}', file=sys.stderr)
-    sys.exit(1)
+candidates.sort(key=lambda c: c[0])
+x, y, w, h = candidates[0][1]
+print(f'{x} {y} {w} {h}')
