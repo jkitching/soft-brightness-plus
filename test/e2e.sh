@@ -50,8 +50,14 @@ run_mode() {
     fi
 }
 
+# Stock GNOME >= 49 has no X11 session. Images with an explicit -x11
+# suffix (e.g. GNOME_VERSION=49-x11, the COPR-restored session) are
+# x11-capable by construction.
 x11_supported() {
-    [ "${GNOME_VERSION}" -lt 49 ]
+    case "${GNOME_VERSION}" in
+        *-x11) return 0 ;;
+        *)     [ "${GNOME_VERSION%%-*}" -lt 49 ] ;;
+    esac
 }
 
 run_x11() {
