@@ -2,19 +2,38 @@
 
 ## Build Process
 
+The build is a plain `Makefile` (the meson/meson-gse setup is gone; ignore
+any stale `build/meson-*` leftovers).
+
 **For creating a release package:**
 ```bash
-rm build/extension.zip
-ninja -C build extension.zip
-mv build/extension.zip soft-brightness-plus@joelkitching.com.vXX.shell-extension.zip
+make zip
 ```
-(Replace `XX` with the appropriate version number)
+Creates `soft-brightness-plus@joelkitching.com.vXX.shell-extension.zip` in
+the repo root (version comes from the `VERSION` variable at the top of the
+Makefile).
 
 **For local testing:**
 ```bash
-ninja -C build install
+make install
 ```
-Then restart GNOME Shell (Alt+F2, `r` on X11; logout/login on Wayland)
+Installs to `~/.local/share/gnome-shell/extensions/`. Then restart GNOME
+Shell (Alt+F2, `r` on X11; logout/login on Wayland)
+
+## Testing
+
+**Unit tests** (Node.js >= 20.6; imports the real `src/*.js` through the
+`gi://` mock loader in `test/hooks.mjs` + `test/mocks/`):
+```bash
+make test
+```
+
+**E2e tests** (containerized GNOME Shell; see `test/e2e.sh` for the
+version matrix):
+```bash
+make test-e2e            # full matrix
+make test-e2e-gnome49    # GNOME 49 only (wayland-only)
+```
 
 ## Checking Logs and Debugging
 
@@ -44,11 +63,8 @@ When releasing a new version, create a **separate commit** after all feature com
 
 **Files to update:**
 
-1. **meson-gse.build** - Update version number (~line 20)
-2. **meson.build** - Update version number (~line 39)
-3. **README.md** - Add changelog entry and update download links (~line 215 for download link, top of Changelog section)
-
-See commit `8218c77` for an example.
+1. **Makefile** - Update the `VERSION` variable (line 1)
+2. **README.md** - Add changelog entry and update download links (~line 215 for download link, top of Changelog section)
 
 **README changelog format:**
 - New section goes above the previous version
@@ -59,7 +75,7 @@ See commit `8218c77` for an example.
 
 ### Before releasing
 1. Update `README.md`: add a `### Version XX` changelog section above the previous version, and update the download link (~line 216) to the new zip filename. **The workflow will fail if this section is missing.**
-2. Commit the version bump (meson-gse.build, meson.build, README.md) and push to master. CI must be green.
+2. Commit the version bump (Makefile, README.md) and push to master. CI must be green.
 
 ### Triggering the release
 Push a version tag:
