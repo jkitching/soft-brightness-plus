@@ -21,5 +21,7 @@ export default {
     },
     Object: class GObject {
         constructor() {}
+        // GJS-style classes chain up with super._init()
+        _init() {}
     },
 };

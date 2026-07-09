@@ -666,7 +666,7 @@ class IndicatorManager {
 }
 
 // Cursor handling
-class CursorManager {
+export class CursorManager {
     constructor(logger, settings, overlayManager) {
         this._logger = logger;
         this._settings = settings;
@@ -830,23 +830,27 @@ class CursorManager {
         // Pause the cursor polling loop when idle so the display can sleep.
         // The software cursor render loop prevents DPMS from powering off the
         // display; removing the watch while idle eliminates that inhibition.
+        //
+        // Idle watches are recurring: they fire on every crossing of the idle
+        // threshold until removed, so register exactly one here and never
+        // re-add it (see gnome-shell's pointerWatcher.js).  Only the
+        // user-active watch is one-shot and needs re-adding on each firing.
         const IDLE_TIMEOUT_MS = 30 * 1000;
         this._cursorIdleWatchId = this._idleMonitor.add_idle_watch(IDLE_TIMEOUT_MS, () => {
-            this._cursorIdleWatchId = 0;
             if (this._cursorWatch != null) {
                 this._cursorWatch.remove();
                 this._cursorWatch = null;
                 this._cursorActor.hide();
             }
-            this._cursorActiveWatchId = this._idleMonitor.add_user_active_watch(() => {
-                this._cursorActiveWatchId = 0;
-                if (this._cursorWatcher != null && this._cursorWatch == null) {
-                    this._cursorActor.show();
-                    this._startPointerWatch();
-                }
-                if (this._idleMonitor != null)
-                    this._setupCursorIdleWatch();
-            });
+            if (this._cursorActiveWatchId === 0) {
+                this._cursorActiveWatchId = this._idleMonitor.add_user_active_watch(() => {
+                    this._cursorActiveWatchId = 0;
+                    if (this._cursorWatcher != null && this._cursorWatch == null) {
+                        this._cursorActor.show();
+                        this._startPointerWatch();
+                    }
+                });
+            }
         });
     }
 
