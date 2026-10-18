@@ -15,12 +15,17 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import Clutter from 'gi://Clutter';
+import Cogl from 'gi://Cogl';
 import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
 
 // Copied almost verbatim from GNOME Shell 49 ui/magnifier.js.  Local
 // additions: the spriteScale getter (used to normalize the cursor
-// hotspot) and the texture node name.
+// hotspot), the texture node name and dimFactor: the clone is not a
+// shader target (an offscreen effect on an actor that moves every frame
+// leaves stale trails), so it is dimmed by modulating the texture color.
+// For a white pixel the shader reduces to out = brightness, so a flat
+// multiply matches the dimmed screen.
 //
 // Scale handling: cursor sprite textures arrive at different scales
 // depending on the surface under the pointer (shell chrome vs app
@@ -35,6 +40,18 @@ export const MouseSpriteContent = GObject.registerClass({
         this._scale = 1.0;
         this._monitorScale = 1.0;
         this._texture = null;
+        this._dimFactor = 1.0;
+    }
+
+    get dimFactor() {
+        return this._dimFactor;
+    }
+
+    set dimFactor(factor) {
+        if (this._dimFactor !== factor) {
+            this._dimFactor = factor;
+            this.invalidate();
+        }
     }
 
     // Scale factor from texture pixels to displayed (logical) pixels.
@@ -58,9 +75,18 @@ export const MouseSpriteContent = GObject.registerClass({
         if (!this._texture)
             return;
 
+        let color = null;
+        if (this._dimFactor < 1.0) {
+            const v = Math.round(this._dimFactor * 255);
+            // In GS 47, Clutter.Color was replaced by Cogl.Color.
+            color = Clutter.Color !== undefined
+                ? new Clutter.Color({red: v, green: v, blue: v, alpha: 255})
+                : new Cogl.Color({red: v, green: v, blue: v, alpha: 255});
+        }
+
         let [minFilter, magFilter] = actor.get_content_scaling_filters();
         let textureNode = new Clutter.TextureNode(this._texture,
-            null, minFilter, magFilter);
+            color, minFilter, magFilter);
         textureNode.set_name('SoftBrightnessPlusMouseSpriteContent');
         node.add_child(textureNode);
 
