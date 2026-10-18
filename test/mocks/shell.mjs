@@ -24,6 +24,9 @@ export class GLSLEffect {
         if (typeof this.vfunc_build_pipeline === 'function')
             this.vfunc_build_pipeline();
     }
+    get_actor() { return this._actor ?? null; }
+    // Stands in for ClutterOffscreenEffect.pre_paint (true = paint with effect).
+    vfunc_pre_paint(..._args) { return true; }
     get_uniform_location(name) { return name; }
     set_uniform_float(location, size, values) {
         this._uniforms[location] = { size, values: Array.from(values) };

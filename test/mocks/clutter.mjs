@@ -48,15 +48,42 @@ class Actor {
         }
     }
     get_parent() { return this._parent; }
-    add_effect_with_name(name, effect) { this._effects.push({ name, effect }); }
-    remove_effect(effect) { this._effects = this._effects.filter(e => e.effect !== effect); }
+    add_effect_with_name(name, effect) {
+        this._effects.push({ name, effect });
+        effect._actor = this;
+    }
+    remove_effect(effect) {
+        this._effects = this._effects.filter(e => e.effect !== effect);
+        if (effect._actor === this) effect._actor = null;
+    }
+    // Tests set _paintVolumeSize ([w, h], or null for an unknown paint
+    // volume) and _allocationSize.
+    get_paint_volume() {
+        if (this._paintVolumeSize === null)
+            return null;
+        const [w, h] = this._paintVolumeSize ?? [100, 100];
+        return { get_width: () => w, get_height: () => h };
+    }
+    get_allocation_box() {
+        const [w, h] = this._allocationSize ?? [100, 100];
+        return { get_size: () => [w, h] };
+    }
     get_effects() { return this._effects.map(e => e.effect); }
+    // Tests set _inClonePaint while "painting" the actor through a Clone.
+    is_in_clone_paint() { return this._inClonePaint ?? false; }
     set_position(x, y) { this._position = [x, y]; }
     set_size(w, h) { this._size = [w, h]; }
     set(props) { Object.assign(this, props); }
     show() { this.visible = true; }
     hide() { this.visible = false; }
     destroy() { this.emit('destroy'); }
+}
+
+class Clone extends Actor {
+    constructor(props = {}) {
+        super(props);
+        this.source = props.source ?? null;
+    }
 }
 
 export const invalidateCalls = [];
@@ -73,6 +100,26 @@ class TextureNode {
     add_child(node) {}
 }
 
+// Mock of Clutter.ShaderEffect as of GS 51 (replacement for Shell.GLSLEffect).
+// Uniforms are set by name; like the real one, it rejects more than 4 components.
+class ShaderEffect {
+    constructor() {
+        this.enabled = true;
+        this._uniforms = {};
+        this._repaints = 0;
+    }
+    _init() {}
+    get_actor() { return this._actor ?? null; }
+    vfunc_pre_paint(..._args) { return true; }
+    set_uniform_float(name, nComponents, values) {
+        if (nComponents > 4 || values.length > 4)
+            throw new Error(`clutter_value_set_shader_float: assertion 'size <= 4' failed (${name})`);
+        this._uniforms[name] = { size: nComponents, values: Array.from(values) };
+    }
+    queue_repaint() { this._repaints++; }
+    vfunc_paint_target(..._args) {}
+}
+
 const mockSeat = {
     _unfocusInhibited: false,
     inhibit_unfocus() { this._unfocusInhibited = true; },
@@ -81,11 +128,13 @@ const mockSeat = {
 
 export default {
     Actor,
+    Clone,
     RequestMode: { CONTENT_SIZE: 0 },
     Content: ContentIface,
     // Leave Container undefined to simulate GS 45+ (uses 'child-added'/'child-removed')
     Container: undefined,
     TextureNode,
+    ShaderEffect,
 
     get_default_backend() {
         return {
