@@ -213,18 +213,18 @@ Install directly from the [Gnome Shell Extensions
 site](https://extensions.gnome.org/extension/5943/soft-brightness-plus/).
 
 Or download the [zip
-file](https://github.com/jkitching/soft-brightness-plus/releases/download/v52/soft-brightness-plus@joelkitching.com.v52.shell-extension.zip)
+file](https://github.com/jkitching/soft-brightness-plus/releases/download/v53/soft-brightness-plus@joelkitching.com.v53.shell-extension.zip)
 from the GitHub [releases
 page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 
 ``` shell
-gnome-extensions install soft-brightness-plus@joelkitching.com.v52.shell-extension.zip
+gnome-extensions install soft-brightness-plus@joelkitching.com.v53.shell-extension.zip
 ```
 
 If you're upgrading from an existing installation, add `--force`:
 
 ``` shell
-gnome-extensions install --force soft-brightness-plus@joelkitching.com.v52.shell-extension.zip
+gnome-extensions install --force soft-brightness-plus@joelkitching.com.v53.shell-extension.zip
 ```
 
 ## Building from source
@@ -246,6 +246,29 @@ gnome-extensions install --force soft-brightness-plus@joelkitching.com.v52.shell
 - To build the extension zip files, run: `ninja -C build extension.zip`, the extension will be found under `build/extension.zip`.
 
 ## Changelog
+
+### Version 53
+#### November 10, 2026
+
+- Add GNOME Shell 51 support (closes #79, #82). GNOME 51
+  removed `ui/pointerWatcher.js`, `Shell.GLSLEffect` and
+  `Clutter.get_default_backend()`. The cursor clone now
+  follows the pointer through the cursor tracker on 51, as
+  GNOME's magnifier does. Thanks to Clément Gayot
+  (@Striffly) for the port in #81.
+- Keep fullscreen windows dimmed: unredirection is now
+  disabled while dimming, so fullscreen video and games no
+  longer bypass the overlay (#35).
+- New "Dimming method" preference. "Overlay" (default)
+  is the translucent layer used so far and works on all
+  hardware. "Shader" scales pixel colours on the GPU, like
+  lowering a backlight; it may glitch or cost performance
+  on some GPUs and drivers. Shader is not yet available on
+  GNOME 51, where the overlay is always used.
+- Cursor clone fixes: stop leaking idle watches (which
+  grew exponentially and slowed the shell over time), fix
+  the GNOME 49 idle-monitor API, stale clones and lost
+  cursor inhibition, and keep the clone above popups.
 
 ### Version 52
 #### July 3, 2026
