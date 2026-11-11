@@ -24,7 +24,14 @@ import {
     gettext as _,
 } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import * as Config from 'resource:///org/gnome/Shell/Extensions/js/misc/config.js';
+
 import * as Utils from './utils.js';
+
+// In GS 51, Shell.GLSLEffect was removed; until the shader is ported,
+// the extension always uses the overlay there (see SHADER_SUPPORTED in
+// extension.js).
+const SHADER_AVAILABLE = parseInt(Config.PACKAGE_VERSION) < 51;
 
 export default class SoftBrightnessPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -87,18 +94,23 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             const dimmingModel = new Gtk.StringList();
             dimmingModel.append(_('Overlay'));
             dimmingModel.append(_('Shader'));
+            // Short subtitle here; the schema description has the details.
             this.dimming_mode_control = new Adw.ComboRow({
                 title: _('Dimming method:'),
-                subtitle: this._getDescription('dimming-mode'),
+                subtitle: SHADER_AVAILABLE
+                    ? _('Overlay works everywhere. Shader dims like a backlight, but may glitch on some GPUs.')
+                    : _('Shader dimming is not yet available on GNOME 51.'),
                 model: dimmingModel,
-                selected: this._settings.get_enum('dimming-mode'),
+                selected: SHADER_AVAILABLE ? this._settings.get_enum('dimming-mode') : 0,
+                sensitive: SHADER_AVAILABLE,
             });
             this.dimming_mode_control.connect('notify::selected', () => {
                 if (this._settings.get_enum('dimming-mode') !== this.dimming_mode_control.selected)
                     this._settings.set_enum('dimming-mode', this.dimming_mode_control.selected);
             });
             this._settings.connect('changed::dimming-mode', () => {
-                this.dimming_mode_control.set_selected(this._settings.get_enum('dimming-mode'));
+                if (SHADER_AVAILABLE)
+                    this.dimming_mode_control.set_selected(this._settings.get_enum('dimming-mode'));
             });
             group.add(this.dimming_mode_control);
 
@@ -139,7 +151,7 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
 
             this.clone_mouse_control = new Adw.SwitchRow({
                 title: _('Mouse cursor brightness control:'),
-                subtitle: this._getDescription('clone-mouse'),
+                subtitle: _('Dim the cursor with the screen. Turn off if the cursor lags or shows the wrong shape, or if the screen stops sleeping.'),
             });
             this._settings.bind('clone-mouse', this.clone_mouse_control, 'active', Gio.SettingsBindFlags.DEFAULT);
             group.add(this.clone_mouse_control);
