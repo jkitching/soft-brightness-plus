@@ -7,6 +7,8 @@
 # GNOME version matrix: images build on ghcr.io/jkitching/gnome-shell-XY
 # (x11docker-gnome; Fedora N = GNOME N). Select with GNOME_VERSION:
 #   GNOME_VERSION=49 test/e2e.sh
+# Dimming method under test (default: the schema default, overlay):
+#   DIMMING_MODE=shader test/e2e.sh
 #
 # GNOME 49+ removed the X11 session upstream, so the x11 lane is skipped
 # there automatically — wayland headless (+ mutter screencast pixel checks)
@@ -41,6 +43,7 @@ run_mode() {
     echo ""
     echo "────────────────────────────────────── ${mode} (GNOME ${GNOME_VERSION})"
     if docker run --rm \
+        -e "DIMMING_MODE=${DIMMING_MODE:-}" \
         -v "${ZIP}:/ext.zip:ro" \
         "${IMAGE}" \
         /run-test.sh "${mode}"; then

@@ -83,6 +83,25 @@ const PreferencesPage = GObject.registerClass(class PreferencesPage extends Adw.
             }).bind(this));
             group.add(this.builtinMonitorControl);
 
+            // Order matches the dimming-mode enum values (overlay=0, shader=1).
+            const dimmingModel = new Gtk.StringList();
+            dimmingModel.append(_('Overlay'));
+            dimmingModel.append(_('Shader'));
+            this.dimming_mode_control = new Adw.ComboRow({
+                title: _('Dimming method:'),
+                subtitle: this._getDescription('dimming-mode'),
+                model: dimmingModel,
+                selected: this._settings.get_enum('dimming-mode'),
+            });
+            this.dimming_mode_control.connect('notify::selected', () => {
+                if (this._settings.get_enum('dimming-mode') !== this.dimming_mode_control.selected)
+                    this._settings.set_enum('dimming-mode', this.dimming_mode_control.selected);
+            });
+            this._settings.connect('changed::dimming-mode', () => {
+                this.dimming_mode_control.set_selected(this._settings.get_enum('dimming-mode'));
+            });
+            group.add(this.dimming_mode_control);
+
             this.add(group);
         }
 

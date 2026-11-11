@@ -43,6 +43,7 @@ const EXPECTED_KEYS = {
     'min-brightness': 'd',
     'monitors': 's',
     'builtin-monitor': 's',
+    'dimming-mode': 's',
     'use-backlight': 'b',
     'clone-mouse': 'b',
     'debug': 'b',
@@ -65,6 +66,15 @@ for (const [key, expectedType] of Object.entries(EXPECTED_KEYS)) {
         continue;
     }
     print(`PASS: key '${key}' type='${actualType}'`);
+}
+
+// dimming-mode must default to the overlay (works on all hardware)
+const dimmingDefault = schema.get_key('dimming-mode').get_default_value().get_string()[0];
+if (dimmingDefault !== 'overlay') {
+    printerr(`FAIL: dimming-mode default '${dimmingDefault}', expected 'overlay'`);
+    allPassed = false;
+} else {
+    print(`PASS: dimming-mode default='${dimmingDefault}'`);
 }
 
 // Validate brightness defaults are in [0,1]

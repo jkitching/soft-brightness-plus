@@ -6,7 +6,7 @@ export function makeSettings(overrides = {}) {
         'monitors': 'all',
         'builtin-monitor': '',
         'use-backlight': false,
-        'prevent-unredirect': 'when-correcting',
+        'dimming-mode': 'overlay',
         'clone-mouse': false,
         ...overrides,
     };

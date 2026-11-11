@@ -234,6 +234,12 @@ export default class SoftBrightnessExtension extends Extension {
             'changed::monitors': () => this._on_brightness_change(),
             'changed::builtin-monitor': () => this._on_brightness_change(),
             'changed::use-backlight': () => this._on_brightness_change(),
+            'changed::dimming-mode': () => {
+                // Tear down whichever method was active; show() then builds
+                // the newly selected one.
+                this._overlayManager.hide();
+                this._on_brightness_change();
+            },
             'changed::debug': () => this._on_debug_change(),
         }
         this._removeSettingsCallbacks = Object.entries(callbacks).map(
@@ -265,8 +271,9 @@ export default class SoftBrightnessExtension extends Extension {
             this._cursorManager.setActive(false);
         } else {
             this._overlayManager.show(curBrightness);
-            // The clone lives inside uiGroup, so the screen shader dims it;
-            // do NOT also modulate the sprite texture (double dimming).
+            // The clone lives inside uiGroup, so both the screen shader and
+            // the stage-level overlay dim it; do NOT also modulate the
+            // sprite texture (double dimming).
             this._cursorManager.setActive(this._overlayManager.initialized());
         }
     }
@@ -982,8 +989,15 @@ export class CursorManager {
     }
 }
 
-// Gamma-curve shader lifecycle and cursor actor hosting.
+// Dimming lifecycle (overlay or shader, per the dimming-mode setting) and
+// cursor actor hosting.
 //
+// Overlay mode: one black St.Widget per dimmed monitor, opacity
+// (1 - brightness), in a group kept on top of global.stage. Works on all
+// hardware. Unredirection is disabled while dimming, otherwise a
+// fullscreen window bypasses the compositor and the overlay is not drawn.
+//
+// Shader mode:
 // Shell.GLSLEffect (ClutterOffscreenEffect) on global.stage itself fails —
 // the stage is the root framebuffer and cannot be redirected to an FBO.
 //
@@ -1012,6 +1026,16 @@ export class OverlayManager {
         this._currentBrightness = null;
         // Cache of the last-applied show() parameters, for redundancy skips
         this._lastShowSig = null;
+
+        // Overlay mode: stage-level group holding one black actor per monitor
+        this._overlayGroup = null;
+        this._overlays = [];
+        this._overlaySig = null;
+        this._unredirectPrevented = false;
+    }
+
+    _mode() {
+        return this._settings.get_string('dimming-mode') === 'shader' ? 'shader' : 'overlay';
     }
 
     enable() {
@@ -1075,7 +1099,7 @@ export class OverlayManager {
     }
 
     initialized() {
-        return this._shaderTargets.length > 0;
+        return this._shaderTargets.length > 0 || this._overlays.length > 0;
     }
 
     addActor(actor) {
@@ -1100,11 +1124,17 @@ export class OverlayManager {
     }
 
     _onStageChildAdded(_stage, child) {
+        // Overlay mode: keep the overlay group above anything newly added
+        // to the stage.
+        if (this._overlayGroup !== null && child !== this._overlayGroup &&
+            global.stage.get_last_child() !== this._overlayGroup) {
+            global.stage.set_child_above_sibling(this._overlayGroup, null);
+        }
         // Skip MetaWindowGroup — it cannot be FBO-redirected. Window content is
         // covered by applying the shader to MetaWindowActors via window-created.
         // (_actorGroup now lives in uiGroup, so no stage-level raise is needed.)
         if (child !== this._actorGroup && child !== global.window_group &&
-            this._currentBrightness !== null) {
+            child !== this._overlayGroup && this._currentBrightness !== null) {
             this._applyShaderToActor(child);
         }
     }
@@ -1136,12 +1166,121 @@ export class OverlayManager {
     }
 
     show(brightness) {
+        if (this._mode() === 'overlay') {
+            this._hideShader();
+            this._showOverlay(brightness);
+        } else {
+            this._hideOverlay();
+            this._showShader(brightness);
+        }
+    }
+
+    hide() {
+        this._hideShader();
+        this._hideOverlay();
+    }
+
+    hideForScreenshot() {
+        for (const { effect } of this._shaderTargets)
+            effect.enabled = false;
+        // Overlay: opacity 0 rather than removing/hiding the actors, which
+        // keeps the stage in compositing mode so GS 46+ Wayland
+        // screenshot_stage_to_content() still captures window content.
+        // show() (from the post-capture hook) restores the opacity.
+        for (const overlay of this._overlays)
+            overlay.opacity = 0;
+    }
+
+    _showOverlay(brightness) {
+        const monitors = this._monitorManager.getMonitors();
+        if (!monitors || monitors.length === 0) {
+            // Monitor selection matches nothing (or not known yet): dim nothing.
+            this._hideOverlay();
+            return;
+        }
+
+        if (this._overlayGroup === null) {
+            this._overlayGroup = new St.Widget({ name: 'soft-brightness-plus-overlay' });
+            Shell.util_set_hidden_from_pick(this._overlayGroup, true);
+            global.stage.add_child(this._overlayGroup);
+        }
+        if (global.stage.get_last_child() !== this._overlayGroup)
+            global.stage.set_child_above_sibling(this._overlayGroup, null);
+
+        // Rebuild the per-monitor actors only when the geometry changed.
+        const sig = JSON.stringify(monitors.map(m => [m.x, m.y, m.width, m.height]));
+        if (sig !== this._overlaySig) {
+            this._destroyOverlayActors();
+            for (const m of monitors) {
+                const overlay = new St.Widget({
+                    style: 'background-color: rgba(0,0,0,1);',
+                });
+                overlay.set_position(m.x, m.y);
+                overlay.set_size(m.width, m.height);
+                this._overlayGroup.add_child(overlay);
+                this._overlays.push(overlay);
+            }
+            this._overlaySig = sig;
+            this._logger.log_debug('_showOverlay(): created ' + this._overlays.length + ' overlay(s)');
+        }
+
+        const opacity = Math.round((1.0 - brightness) * 255);
+        for (const overlay of this._overlays)
+            overlay.opacity = opacity;
+
+        this._preventUnredirect();
+        this._logger.log_debug('show(' + brightness + '): overlay opacity ' + opacity);
+    }
+
+    _destroyOverlayActors() {
+        for (const overlay of this._overlays) {
+            this._overlayGroup?.remove_child(overlay);
+            overlay.destroy();
+        }
+        this._overlays = [];
+        this._overlaySig = null;
+    }
+
+    _hideOverlay() {
+        this._destroyOverlayActors();
+        if (this._overlayGroup !== null) {
+            if (this._overlayGroup.get_parent() === global.stage)
+                global.stage.remove_child(this._overlayGroup);
+            this._overlayGroup.destroy();
+            this._overlayGroup = null;
+        }
+        this._allowUnredirect();
+    }
+
+    _preventUnredirect() {
+        if (this._unredirectPrevented)
+            return;
+        // In GS 48, *_unredirect_for_display functions were moved to global compositor.
+        if (global.compositor?.disable_unredirect !== undefined)
+            global.compositor.disable_unredirect();
+        else
+            Meta.disable_unredirect_for_display(global.display);
+        this._unredirectPrevented = true;
+    }
+
+    _allowUnredirect() {
+        if (!this._unredirectPrevented)
+            return;
+        // In GS 48, *_unredirect_for_display functions were moved to global compositor.
+        if (global.compositor?.enable_unredirect !== undefined)
+            global.compositor.enable_unredirect();
+        else
+            Meta.enable_unredirect_for_display(global.display);
+        this._unredirectPrevented = false;
+    }
+
+    _showShader(brightness) {
         this._currentBrightness = brightness;
 
         const monitorRects = this._getShaderMonitorRects();
         if (monitorRects === null) {
             // Monitor selection matches nothing: dim nothing.
-            this.hide();
+            this._hideShader();
             return;
         }
 
@@ -1153,7 +1292,8 @@ export class OverlayManager {
         // damage.  Giving the clone its own effect instead would FBO-redirect
         // an actor that moves every frame, leaving stale trails behind.
         const stageTargets = global.stage.get_children().filter(c =>
-            c !== this._actorGroup && c !== global.window_group
+            c !== this._actorGroup && c !== global.window_group &&
+            c !== this._overlayGroup
         );
         const windowActors = global.get_window_actors ? global.get_window_actors() : [];
         const targets = [...stageTargets, ...windowActors];
@@ -1198,7 +1338,7 @@ export class OverlayManager {
         });
     }
 
-    hide() {
+    _hideShader() {
         this._currentBrightness = null;
         this._lastShowSig = null;
         for (const { actor, effect, destroyId } of this._shaderTargets) {
@@ -1208,11 +1348,6 @@ export class OverlayManager {
             try { actor.remove_effect(effect); } catch (_e) {}
         }
         this._shaderTargets = [];
-    }
-
-    hideForScreenshot() {
-        for (const { effect } of this._shaderTargets)
-            effect.enabled = false;
     }
 
     // Returns UV-space rects [{x,y,w,h}] relative to stage size for monitor targeting.

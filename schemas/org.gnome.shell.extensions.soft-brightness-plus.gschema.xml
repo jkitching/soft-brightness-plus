@@ -4,6 +4,10 @@
     <value value="1" nick="built-in"/>
     <value value="2" nick="external"/>
   </enum>
+  <enum id="org.gnome.shell.extensions.soft-brightness-plus.dimming-mode">
+    <value value="0" nick="overlay"/>
+    <value value="1" nick="shader"/>
+  </enum>
   <schema id="org.gnome.shell.extensions.soft-brightness-plus" path="/org/gnome/shell/extensions/soft-brightness-plus/">
     <key name="use-backlight" type="b">
       <default>false</default>
@@ -19,6 +23,16 @@
       <default>""</default>
       <summary>Builtin monitor.</summary>
       <description>The name of the built-in monitor.</description>
+    </key>
+    <key name="dimming-mode" enum="org.gnome.shell.extensions.soft-brightness-plus.dimming-mode">
+      <default>"overlay"</default>
+      <summary>Dimming method.</summary>
+      <description>How the screen is darkened. "overlay" places a
+      translucent black layer over each dimmed monitor; it works on
+      all hardware. "shader" scales pixel colours with a GPU shader
+      applied to each window and shell layer, like lowering a
+      backlight; it can glitch or cost performance on some GPUs and
+      drivers.</description>
     </key>
 
     <key name="min-brightness" type="d">

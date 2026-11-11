@@ -40,9 +40,9 @@ trap cleanup EXIT
 
 # Run GNOME Shell inside a dedicated dbus session
 # bash -s passes positional args ($1..$3) to the here-doc script
-dbus-run-session -- bash -s "${MODE}" "${UUID}" "${LOG}" "${SETTLE}" <<'INNER'
+dbus-run-session -- bash -s "${MODE}" "${UUID}" "${LOG}" "${SETTLE}" "${DIMMING_MODE:-}" <<'INNER'
 set -euo pipefail
-MODE="$1"; UUID="$2"; LOG="$3"; SETTLE="$4"
+MODE="$1"; UUID="$2"; LOG="$3"; SETTLE="$4"; DIMMING_MODE="$5"
 EXT_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
 SCHEMA_DIR="${EXT_DIR}/schemas"
 SCHEMA_ID="org.gnome.shell.extensions.soft-brightness-plus"
@@ -53,6 +53,11 @@ gsettings set org.gnome.shell enabled-extensions "['${UUID}']"
 # Enable extension debug logging so brightness changes appear in gnome-shell log
 GSETTINGS_SCHEMA_DIR="${SCHEMA_DIR}" \
     gsettings set "${SCHEMA_ID}" debug true
+if [ -n "${DIMMING_MODE}" ]; then
+    GSETTINGS_SCHEMA_DIR="${SCHEMA_DIR}" \
+        gsettings set "${SCHEMA_ID}" dimming-mode "${DIMMING_MODE}"
+fi
+echo "  dimming-mode: $(GSETTINGS_SCHEMA_DIR="${SCHEMA_DIR}" gsettings get "${SCHEMA_ID}" dimming-mode)"
 
 # Set a vertical-gradient background so brightness changes are visually
 # measurable AND the baseline has pixel variation (a solid background makes
@@ -254,7 +259,13 @@ if [ "${PIXEL_CHECKS}" = "true" ]; then
         if [ "${BAR_OK}" = "yes" ]; then
             echo "  PASS: shell chrome (top bar) is dimmed"
         else
-            echo "  WARN: shell chrome (top bar) is NOT dimmed — known gap in the shader path"
+            if [ "${DIMMING_MODE:-overlay}" = "shader" ]; then
+                echo "  WARN: shell chrome (top bar) is NOT dimmed — known gap in the shader path"
+            else
+                echo "  FAIL: shell chrome (top bar) is NOT dimmed in overlay mode"
+                kill "${GS_PID}" 2>/dev/null || true
+                exit 1
+            fi
         fi
     fi
 fi

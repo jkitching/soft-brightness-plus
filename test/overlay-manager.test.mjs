@@ -48,8 +48,10 @@ function setupGlobals() {
     return { stage, windowGroup, display };
 }
 
+// The shader suites below run in shader mode; overlay-mode tests pass
+// { 'dimming-mode': 'overlay' } explicitly.
 function makeOverlay({ settings: overrides = {}, monitors = null } = {}) {
-    const settings = makeSettings(overrides);
+    const settings = makeSettings({ 'dimming-mode': 'shader', ...overrides });
     const monitorManager = { getMonitors: () => monitors };
     const om = new OverlayManager(logger, settings, monitorManager);
     om.enable();
@@ -237,6 +239,149 @@ describe('OverlayManager.hide()', () => {
         om.show(0.5);
         assert.equal(effectsOf(bg).length, 1);
         assert.notEqual(effectsOf(bg)[0], first, 'new effect after full hide');
+    });
+});
+
+// ── overlay mode ─────────────────────────────────────────────────────────────
+
+const MON_A = { x: 0, y: 0, width: 1920, height: 1080 };
+const MON_B = { x: 1920, y: 0, width: 1280, height: 1024 };
+
+function makeOverlayMode({ settings = {}, monitors = [MON_A] } = {}) {
+    return makeOverlay({ settings: { 'dimming-mode': 'overlay', ...settings }, monitors });
+}
+
+function overlayGroup() {
+    return global.stage.get_children().find(c => c.name === 'soft-brightness-plus-overlay');
+}
+
+describe('OverlayManager: overlay mode', () => {
+    let unredirect;
+    beforeEach(() => {
+        unredirect = [];
+        global.compositor = {
+            disable_unredirect() { unredirect.push('disable'); },
+            enable_unredirect() { unredirect.push('enable'); },
+        };
+    });
+
+    test('creates one black actor per monitor at (1 - brightness) opacity, no shader', () => {
+        const bg = new Actor();
+        global.stage.add_child(bg);
+        const w1 = new Actor();
+        windowActors.push(w1);
+        const { om } = makeOverlayMode({ monitors: [MON_A, MON_B] });
+
+        om.show(0.5);
+
+        const group = overlayGroup();
+        assert.ok(group, 'overlay group added to the stage');
+        assert.equal(global.stage.get_last_child(), group, 'overlay group is topmost');
+        const overlays = group.get_children();
+        assert.equal(overlays.length, 2);
+        assert.deepEqual(overlays[1]._position, [1920, 0]);
+        assert.deepEqual(overlays[1]._size, [1280, 1024]);
+        for (const o of overlays)
+            assert.equal(o.opacity, 128);
+        for (const target of [bg, w1, group])
+            assert.equal(effectsOf(target).length, 0, 'no shader in overlay mode');
+        assert.equal(om.initialized(), true);
+        assert.deepEqual(unredirect, ['disable']);
+    });
+
+    test('brightness change updates opacity without recreating actors', () => {
+        const { om } = makeOverlayMode();
+        om.show(0.5);
+        const first = overlayGroup().get_children()[0];
+        om.show(0.8);
+        assert.equal(overlayGroup().get_children()[0], first);
+        assert.equal(first.opacity, Math.round(0.2 * 255));
+        assert.deepEqual(unredirect, ['disable'], 'unredirect disabled only once');
+    });
+
+    test('monitor geometry change rebuilds the overlay actors', () => {
+        const monitors = [MON_A];
+        const { om } = makeOverlay({ settings: { 'dimming-mode': 'overlay' } });
+        om._monitorManager.getMonitors = () => monitors;
+        om.show(0.5);
+        const first = overlayGroup().get_children()[0];
+        monitors.push(MON_B);
+        om.show(0.5);
+        const now = overlayGroup().get_children();
+        assert.equal(now.length, 2);
+        assert.ok(!now.includes(first), 'old actor replaced');
+    });
+
+    test('stays above stage children added later; they get no shader', () => {
+        const { om } = makeOverlayMode();
+        om.show(0.5);
+        const late = new Actor();
+        global.stage.add_child(late);
+        assert.equal(global.stage.get_last_child(), overlayGroup());
+        assert.equal(effectsOf(late).length, 0);
+    });
+
+    test('hideForScreenshot() zeroes opacity; show() restores it', () => {
+        const { om } = makeOverlayMode();
+        om.show(0.5);
+        const o = overlayGroup().get_children()[0];
+        om.hideForScreenshot();
+        assert.equal(o.opacity, 0);
+        assert.equal(overlayGroup(), o.get_parent(), 'actors stay on the stage');
+        om.show(0.5);
+        assert.equal(o.opacity, 128);
+    });
+
+    test('hide() removes the overlay group and re-allows unredirect', () => {
+        const { om } = makeOverlayMode();
+        om.show(0.5);
+        om.hide();
+        assert.equal(overlayGroup(), undefined);
+        assert.equal(om.initialized(), false);
+        assert.deepEqual(unredirect, ['disable', 'enable']);
+        assert.doesNotThrow(() => om.hide(), 'repeated hide is safe');
+        assert.deepEqual(unredirect, ['disable', 'enable']);
+    });
+
+    test('monitor selection matching nothing dims nothing', () => {
+        const { om } = makeOverlayMode({ settings: { monitors: 'external' }, monitors: [] });
+        om.show(0.5);
+        assert.equal(overlayGroup(), undefined);
+        assert.equal(om.initialized(), false);
+        assert.deepEqual(unredirect, []);
+    });
+
+    test('falls back to Meta unredirect API before GS 48', () => {
+        delete global.compositor;
+        const { om } = makeOverlayMode();
+        assert.doesNotThrow(() => { om.show(0.5); om.hide(); });
+    });
+
+    test('switching mode tears down the previous method', () => {
+        const bg = new Actor();
+        global.stage.add_child(bg);
+        const { om, settings } = makeOverlayMode();
+        om.show(0.5);
+        assert.ok(overlayGroup());
+
+        settings._data['dimming-mode'] = 'shader';
+        om.show(0.5);
+        assert.equal(overlayGroup(), undefined, 'overlay removed in shader mode');
+        assert.equal(effectsOf(bg).length, 1, 'shader applied');
+        assert.deepEqual(unredirect, ['disable', 'enable']);
+
+        settings._data['dimming-mode'] = 'overlay';
+        om.show(0.5);
+        assert.equal(effectsOf(bg).length, 0, 'shader removed in overlay mode');
+        assert.ok(overlayGroup());
+    });
+
+    test('disable() cleans up overlay mode', () => {
+        const { om } = makeOverlayMode();
+        om.show(0.5);
+        om.disable();
+        assert.equal(overlayGroup(), undefined);
+        assert.deepEqual(unredirect, ['disable', 'enable']);
     });
 });
 
