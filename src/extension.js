@@ -17,7 +17,6 @@
 
 import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import * as PointerWatcher from 'resource:///org/gnome/shell/ui/pointerWatcher.js';
 import {QuickSlider} from 'resource:///org/gnome/shell/ui/quickSettings.js';
 import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
@@ -32,7 +31,12 @@ import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/
 
 import * as Logger from './logger.js';
 import * as Utils from './utils.js';
-import { MouseSpriteContent } from './cursor.js';
+import { MouseSpriteContent, CursorTrackerPointerWatcher } from './cursor.js';
+
+// In GS 51, ui/pointerWatcher.js was removed; see CursorTrackerPointerWatcher.
+const PointerWatcher = parseInt(Config.PACKAGE_VERSION) < 51
+    ? await import('resource:///org/gnome/shell/ui/pointerWatcher.js')
+    : null;
 
 // Backlight-like GLSL dimming effect: out = b * c, where b = brightness.
 // Contrast ratios are preserved, like a hardware backlight; blacks stay
@@ -43,7 +47,13 @@ import { MouseSpriteContent } from './cursor.js';
 //   Non-empty → only dim pixels inside those rects (for built-in/external targeting).
 export const MAX_SHADER_MONITORS = 4;
 
-export const GammaCurveEffect = GObject.registerClass(
+// In GS 51, Shell.GLSLEffect was removed (replaced by Clutter.ShaderEffect).
+// Until the shader is ported, shader mode is unavailable there and the
+// overlay is used instead.  The class must only be defined when the base
+// exists: extending undefined would throw at module load.
+export const SHADER_SUPPORTED = Shell.GLSLEffect !== undefined;
+
+export const GammaCurveEffect = !SHADER_SUPPORTED ? null : GObject.registerClass(
     class GammaCurveEffect extends Shell.GLSLEffect {
         _init(brightness, monitorRects) {
             super._init();
@@ -103,6 +113,14 @@ export const GammaCurveEffect = GObject.registerClass(
         }
     }
 );
+
+// In GS 51, Clutter.get_default_backend() was removed.
+function getSeat() {
+    const backend = Clutter.get_default_backend !== undefined
+        ? Clutter.get_default_backend()
+        : global.stage.context.get_backend();
+    return backend.get_default_seat();
+}
 
 export default class SoftBrightnessExtension extends Extension {
     constructor(...args) {
@@ -802,7 +820,9 @@ export class CursorManager {
 
             this._cursorActor = new Clutter.Actor();
             this._cursorActor.add_child(this._cursorSprite);
-            this._cursorWatcher = PointerWatcher.getPointerWatcher();
+            this._cursorWatcher = PointerWatcher !== null
+                ? PointerWatcher.getPointerWatcher()
+                : new CursorTrackerPointerWatcher(this._cursorTracker);
 
             this._overlayManager.addActor(this._cursorActor);
             this._cursorInOverlay = true;
@@ -951,7 +971,7 @@ export class CursorManager {
     }
 
     _showSystemCursor() {
-        const seat = Clutter.get_default_backend().get_default_seat();
+        const seat = getSeat();
 
         if (this._cursorUnfocusInhibited) {
             seat.uninhibit_unfocus();
@@ -970,7 +990,7 @@ export class CursorManager {
     }
 
     _hideSystemCursor() {
-        const seat = Clutter.get_default_backend().get_default_seat();
+        const seat = getSeat();
 
         if (!this._cursorUnfocusInhibited) {
             seat.inhibit_unfocus();
@@ -1035,7 +1055,8 @@ export class OverlayManager {
     }
 
     _mode() {
-        return this._settings.get_string('dimming-mode') === 'shader' ? 'shader' : 'overlay';
+        return SHADER_SUPPORTED &&
+            this._settings.get_string('dimming-mode') === 'shader' ? 'shader' : 'overlay';
     }
 
     enable() {

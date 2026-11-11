@@ -122,3 +122,54 @@ describe('cursor.js – MouseSpriteContent texture freeze (issue #52)', () => {
         assert.equal(content.invalidateSizeCalls, 2); // no size change
     });
 });
+
+// ── CursorTrackerPointerWatcher (GS 51+ stand-in for ui/pointerWatcher.js) ──
+
+import { CursorTrackerPointerWatcher } from '../src/cursor.js';
+
+function makeLaters() {
+    let next = 1;
+    const pending = new Map();
+    return {
+        pending,
+        add(_type, fn) { const id = next++; pending.set(id, fn); return id; },
+        remove(id) { pending.delete(id); },
+        run() { const fns = [...pending.values()]; pending.clear(); fns.forEach(f => f()); },
+    };
+}
+
+function makeTracker() {
+    const handlers = new Map();
+    let next = 1;
+    return {
+        handlers,
+        connect(sig, fn) { const id = next++; handlers.set(id, { sig, fn }); return id; },
+        disconnect(id) { handlers.delete(id); },
+        emit(sig) { for (const h of [...handlers.values()]) if (h.sig === sig) h.fn(); },
+    };
+}
+
+describe('CursorTrackerPointerWatcher', () => {
+    test('coalesces position-invalidated into one callback per redraw; remove() cleans up', () => {
+        const laters = makeLaters();
+        globalThis.global = { compositor: { get_laters: () => laters } };
+        const tracker = makeTracker();
+        let calls = 0;
+        const watch = new CursorTrackerPointerWatcher(tracker).addWatch(16, () => calls++);
+
+        tracker.emit('position-invalidated');
+        tracker.emit('position-invalidated');
+        assert.equal(laters.pending.size, 1, 'one later per frame');
+        laters.run();
+        assert.equal(calls, 1);
+
+        tracker.emit('position-invalidated');
+        laters.run();
+        assert.equal(calls, 2, 'a new later is queued after the previous ran');
+
+        tracker.emit('position-invalidated');
+        watch.remove();
+        assert.equal(tracker.handlers.size, 0, 'signal disconnected');
+        assert.equal(laters.pending.size, 0, 'pending later removed');
+    });
+});

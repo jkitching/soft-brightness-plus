@@ -45,7 +45,7 @@ jobs:
           path: build/extension.zip
 
   # Images build on ghcr.io/jkitching/gnome-shell-XY (x11docker-gnome;
-  # Fedora N = GNOME N). The x11 lane runs only where stock GNOME still
+  # one image per GNOME release). The x11 lane runs only where stock GNOME still
   # ships an X11 session (< 49); e2e.sh skips it automatically elsewhere.
   e2e:
     runs-on: ubuntu-latest
@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        gnome: [45, 46, 47, 48, 49, 50]
+        gnome: [45, 46, 47, 48, 49, 50, 51]
     steps:
       - uses: actions/checkout@v4
 

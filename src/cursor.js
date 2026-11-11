@@ -15,8 +15,46 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
+
+// Stand-in for ui/pointerWatcher.js on GS 51+, which removed it: follows
+// the pointer through the cursor tracker's position-invalidated signal,
+// coalesced to one callback per frame with a BEFORE_REDRAW later, like
+// ui/magnifier.js.  Only the addWatch()/remove() subset CursorManager
+// uses is provided.  Not used before GS 51: before mutter 50 the signal
+// was emitted from meta_display_handle_event(), which skips captured input.
+//
+// From upstream PR #81 by Clément Gayot (Striffly on GitHub).
+export class CursorTrackerPointerWatcher {
+    constructor(cursorTracker) {
+        this._cursorTracker = cursorTracker;
+    }
+
+    addWatch(_interval, fn) {
+        const laters = global.compositor.get_laters();
+        let laterId = 0;
+        const positionId = this._cursorTracker.connect('position-invalidated', () => {
+            if (laterId)
+                return;
+            laterId = laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
+                laterId = 0;
+                fn();
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+        return {
+            remove: () => {
+                this._cursorTracker.disconnect(positionId);
+                if (laterId) {
+                    laters.remove(laterId);
+                    laterId = 0;
+                }
+            },
+        };
+    }
+}
 
 // Copied almost verbatim from GNOME Shell 49 ui/magnifier.js.  Local
 // additions: the spriteScale getter (used to normalize the cursor

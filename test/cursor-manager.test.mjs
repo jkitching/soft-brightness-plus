@@ -196,3 +196,21 @@ describe('CursorManager idle watch lifecycle', () => {
         assert.equal(idleMonitor.count('active'), 0);
     });
 });
+
+describe('CursorManager system cursor seat lookup', () => {
+    test('uses global.stage.context backend when Clutter.get_default_backend is gone (GS 51)', () => {
+        const cm = makeManager();
+        const saved = Clutter.get_default_backend;
+        const seat = { inhibit_unfocus() { this.inhibited = true; }, uninhibit_unfocus() { this.inhibited = false; } };
+        try {
+            delete Clutter.get_default_backend;
+            global.stage = { context: { get_backend: () => ({ get_default_seat: () => seat }) } };
+            cm.setActive(true);
+            assert.equal(seat.inhibited, true);
+            cm.setActive(false);
+            assert.equal(seat.inhibited, false);
+        } finally {
+            Clutter.get_default_backend = saved;
+        }
+    });
+});

@@ -5,7 +5,7 @@
 # Usage: test/e2e.sh [wayland|x11|both]
 #
 # GNOME version matrix: images build on ghcr.io/jkitching/gnome-shell-XY
-# (x11docker-gnome; Fedora N = GNOME N). Select with GNOME_VERSION:
+# (x11docker-gnome; one image per GNOME release). Select with GNOME_VERSION:
 #   GNOME_VERSION=49 test/e2e.sh
 # Dimming method under test (default: the schema default, overlay):
 #   DIMMING_MODE=shader test/e2e.sh

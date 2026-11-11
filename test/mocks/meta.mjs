@@ -13,6 +13,7 @@ export default {
             };
         },
     },
+    LaterType: { BEFORE_REDRAW: 1 },
     disable_unredirect_for_display(_display) {},
     enable_unredirect_for_display(_display) {},
 };

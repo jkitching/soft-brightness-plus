@@ -32,7 +32,8 @@
       all hardware. "shader" scales pixel colours with a GPU shader
       applied to each window and shell layer, like lowering a
       backlight; it can glitch or cost performance on some GPUs and
-      drivers.</description>
+      drivers. Shader is not yet available on GNOME 51 and later,
+      where the overlay is always used.</description>
     </key>
 
     <key name="min-brightness" type="d">
