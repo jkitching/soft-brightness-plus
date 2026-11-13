@@ -9,7 +9,6 @@ ZIP_NAME    := $(UUID).v$(VERSION).shell-extension.zip
 # Source lists
 JS_SOURCES := src/cursor.js src/extension.js src/logger.js src/prefs.js src/utils.js
 SCHEMA_XML := schemas/org.gnome.shell.extensions.soft-brightness-plus.gschema.xml
-DBUS_XML   := dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml
 
 # Translations
 LINGUAS  := $(shell cat po/LINGUAS)
@@ -46,9 +45,8 @@ zip dist: all
 	@rm -f $(ZIP_NAME)
 	@TMPDIR=$$(mktemp -d) && \
 	  cp $(JS_SOURCES) $(BUILD_DIR)/metadata.json $$TMPDIR/ && \
-	  mkdir -p $$TMPDIR/schemas $$TMPDIR/dbus-interfaces && \
+	  mkdir -p $$TMPDIR/schemas && \
 	  cp $(SCHEMA_XML) $$TMPDIR/schemas/ && \
-	  cp $(DBUS_XML) $$TMPDIR/dbus-interfaces/ && \
 	  cp -r $(BUILD_DIR)/locale $$TMPDIR/ && \
 	  (cd $$TMPDIR && zip -r $(CURDIR)/$(ZIP_NAME) .) && \
 	  rm -rf $$TMPDIR
@@ -57,10 +55,9 @@ zip dist: all
 
 # ── install ───────────────────────────────────────────────────────────────────
 install: all
-	@mkdir -p $(INSTALL_DIR)/schemas $(INSTALL_DIR)/dbus-interfaces
+	@mkdir -p $(INSTALL_DIR)/schemas
 	cp $(JS_SOURCES) $(BUILD_DIR)/metadata.json $(INSTALL_DIR)/
 	cp $(BUILD_DIR)/schemas/gschemas.compiled $(SCHEMA_XML) $(INSTALL_DIR)/schemas/
-	cp $(DBUS_XML) $(INSTALL_DIR)/dbus-interfaces/
 	cp -r $(BUILD_DIR)/locale $(INSTALL_DIR)/
 	@echo "Installed to $(INSTALL_DIR)"
 

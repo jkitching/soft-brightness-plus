@@ -17,28 +17,30 @@
 
 import Gio from 'gi://Gio';
 
+// Only the subset of org.gnome.Mutter.DisplayConfig we call.  Inlined rather
+// than read from disk to avoid synchronous file IO in the shell process.
+const DisplayConfigInterface = `
+<node>
+  <interface name="org.gnome.Mutter.DisplayConfig">
+    <method name="GetCurrentState">
+      <arg name="serial" direction="out" type="u" />
+      <arg name="monitors" direction="out" type="a((ssss)a(siiddada{sv})a{sv})" />
+      <arg name="logical_monitors" direction="out" type="a(iiduba(ssss)a{sv})" />
+      <arg name="properties" direction="out" type="a{sv}" />
+    </method>
+  </interface>
+</node>`;
+
 let cachedDisplayConfigProxy = null;
 
-function getDisplayConfigProxy(extPath) {
-    if (cachedDisplayConfigProxy == null) {
-        let xml = null;
-        const file = Gio.File.new_for_path(extPath + '/dbus-interfaces/org.gnome.Mutter.DisplayConfig.xml');
-        try {
-            const [ok, bytes] = file.load_contents(null);
-            if (ok) {
-                xml = new TextDecoder().decode(bytes);
-            }
-        } catch (e) {
-            console.error('failed to load DisplayConfig interface XML');
-            throw e;
-        }
-        cachedDisplayConfigProxy = Gio.DBusProxy.makeProxyWrapper(xml);
-    }
+function getDisplayConfigProxy() {
+    if (cachedDisplayConfigProxy == null)
+        cachedDisplayConfigProxy = Gio.DBusProxy.makeProxyWrapper(DisplayConfigInterface);
     return cachedDisplayConfigProxy;
 }
 
 export function newDisplayConfig(extPath, callback) {
-    const DisplayConfigProxy = getDisplayConfigProxy(extPath);
+    const DisplayConfigProxy = getDisplayConfigProxy();
     new DisplayConfigProxy(
         Gio.DBus.session,
         'org.gnome.Mutter.DisplayConfig',

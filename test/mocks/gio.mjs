@@ -17,17 +17,6 @@ export default {
         },
     },
 
-    File: {
-        new_for_path(path) {
-            return {
-                load_contents(_cancellable) {
-                    // Return empty XML that won't be parsed in tests
-                    return [false, null];
-                },
-            };
-        },
-    },
-
     _mockProxy: mockProxyInstance,
 
     _fireDisplayConfigCallback(error = null) {
