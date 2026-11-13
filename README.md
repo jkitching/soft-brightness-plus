@@ -213,18 +213,18 @@ Install directly from the [Gnome Shell Extensions
 site](https://extensions.gnome.org/extension/5943/soft-brightness-plus/).
 
 Or download the [zip
-file](https://github.com/jkitching/soft-brightness-plus/releases/download/v53/soft-brightness-plus@joelkitching.com.v53.shell-extension.zip)
+file](https://github.com/jkitching/soft-brightness-plus/releases/download/v54/soft-brightness-plus@joelkitching.com.v54.shell-extension.zip)
 from the GitHub [releases
 page](https://github.com/jkitching/soft-brightness-plus/releases) and run:
 
 ``` shell
-gnome-extensions install soft-brightness-plus@joelkitching.com.v53.shell-extension.zip
+gnome-extensions install soft-brightness-plus@joelkitching.com.v54.shell-extension.zip
 ```
 
 If you're upgrading from an existing installation, add `--force`:
 
 ``` shell
-gnome-extensions install --force soft-brightness-plus@joelkitching.com.v53.shell-extension.zip
+gnome-extensions install --force soft-brightness-plus@joelkitching.com.v54.shell-extension.zip
 ```
 
 ## Building from source
@@ -246,6 +246,17 @@ gnome-extensions install --force soft-brightness-plus@joelkitching.com.v53.shell
 - To build the extension zip files, run: `ninja -C build extension.zip`, the extension will be found under `build/extension.zip`.
 
 ## Changelog
+
+### Version 54
+#### November 13, 2026
+
+- Fix the extensions.gnome.org review of version 53: the
+  Mutter DisplayConfig D-Bus interface is now built in
+  instead of being read from disk at startup.
+- Preferences: shorter subtitles so the "Dimming method"
+  dropdown is no longer squeezed. On GNOME 51 the row is
+  shown disabled at "Overlay", since shader dimming is not
+  available there yet.
 
 ### Version 53
 #### November 10, 2026
