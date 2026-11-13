@@ -23,7 +23,7 @@ VCS_TAG := $(shell git describe --tags --long --always 2>/dev/null || echo unkno
 all: $(BUILD_DIR)/metadata.json $(BUILD_DIR)/schemas/gschemas.compiled $(MO_FILES)
 
 # ── metadata.json ─────────────────────────────────────────────────────────────
-$(BUILD_DIR)/metadata.json: src/metadata.json.in
+$(BUILD_DIR)/metadata.json: src/metadata.json.in Makefile
 	@mkdir -p $(BUILD_DIR)
 	sed \
 	  -e 's|@version@|$(VERSION)|g' \
